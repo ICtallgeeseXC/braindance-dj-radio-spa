@@ -211,6 +211,9 @@
   let injectSecret = $state<string>('');
   let listenerInjectToken = $state<string>('');
   let listenerCanInject = $state<boolean>(false);
+  let activeVisMode = $state<'off' | 'lo' | 'hi'>(
+    (typeof localStorage !== 'undefined' && (localStorage.getItem('p2p_vis_mode') as 'off' | 'lo' | 'hi')) || 'lo'
+  );
 
   interface PendingInjectTrack {
     manifest: TrackManifest;
@@ -1866,6 +1869,7 @@
                     {mode}
                     onSeek={handleSeek}
                     getAudioData={() => player ? player.getAudioVisualData() : null}
+                    onVisModeChange={(m) => (activeVisMode = m)}
                   />
 
                   <!-- Pre-buffer status badges (NERV-UI Phase Rails) -->
@@ -1991,7 +1995,19 @@
           </div>
         </div>
 
-        <MagiComputing {peers} activeStream={mode === 'dj' ? isPlaying : isAudioActuallyPlaying} />
+        <MagiComputing
+          {peers}
+          activeStream={mode === 'dj' ? isPlaying : isAudioActuallyPlaying}
+          {volume}
+          visMode={activeVisMode}
+          trackTitle={currentTrack?.title || ''}
+          trackArtist={currentTrack?.artist || ''}
+          {currentTime}
+          duration={currentTrack?.duration || duration || 0}
+          bufferProgress={mode === 'dj' ? 100 : currentBufferProgress}
+          {stationCode}
+          mode={mode === 'dj' ? 'dj' : 'listener'}
+        />
 
         <!-- DJ Playlist Queue -->
         {#if mode === 'dj'}

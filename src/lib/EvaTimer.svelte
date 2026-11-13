@@ -8,7 +8,8 @@
     isAudioActuallyPlaying = false,
     mode = 'listener',
     onSeek = (frac: number) => {},
-    getAudioData = () => null
+    getAudioData = () => null,
+    onVisModeChange = (_visMode: 'off' | 'lo' | 'hi') => {}
   }: {
     currentTime: number;
     duration: number;
@@ -17,6 +18,7 @@
     mode?: string;
     onSeek?: (frac: number) => void;
     getAudioData?: () => any;
+    onVisModeChange?: (visMode: 'off' | 'lo' | 'hi') => void;
   } = $props();
 
   let showRemaining = $state(true);
@@ -30,6 +32,7 @@
   function cycleVisMode() {
     visMode = visMode === 'lo' ? 'hi' : visMode === 'hi' ? 'off' : 'lo';
     try { localStorage.setItem('p2p_vis_mode', visMode); } catch {}
+    onVisModeChange(visMode);
     if (visMode === 'off') {
       resetWavesToBaseline();
       wasVisOff = true;
