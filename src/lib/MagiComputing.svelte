@@ -152,9 +152,15 @@
       })
     ];
 
-    const pick = generators[Math.floor(Math.random() * generators.length)];
-    return pick();
+    let idx = Math.floor(Math.random() * generators.length);
+    if (generators.length > 1 && idx === lastGenIdx[unitIndex]) {
+      idx = (idx + 1 + Math.floor(Math.random() * (generators.length - 1))) % generators.length;
+    }
+    lastGenIdx[unitIndex] = idx;
+    return generators[idx]();
   }
+
+  const lastGenIdx = [-1, -1, -1];
 
   function makeInitialBuffer(unitIndex: number): CodeEntry[] {
     return Array.from({ length: VISIBLE_LINES }, () => generateLiveLine(unitIndex));
@@ -166,39 +172,66 @@
     makeInitialBuffer(2)
   ]);
   let unitProgress = $state<[number, number, number]>([74, 68, 82]);
-  let intervalId: ReturnType<typeof setInterval> | null = null;
+  const unitTimers: Array<ReturnType<typeof setTimeout> | null> = [null, null, null];
+
+  function clearAllUnitTimers() {
+    for (let i = 0; i < unitTimers.length; i++) {
+      if (unitTimers[i] !== null) {
+        clearTimeout(unitTimers[i]!);
+        unitTimers[i] = null;
+      }
+    }
+  }
+
+  function nextUnitDelay(streaming: boolean): number {
+    return streaming
+      ? 320 + Math.floor(Math.random() * 560)
+      : 680 + Math.floor(Math.random() * 780);
+  }
 
   $effect(() => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
+    const streaming = activeStream;
+    clearAllUnitTimers();
+    let cancelled = false;
+
+    const scheduleUnit = (unitIndex: number) => {
+      if (cancelled) return;
+      unitTimers[unitIndex] = setTimeout(() => {
+        if (cancelled) return;
+        const nextBuffers: [CodeEntry[], CodeEntry[], CodeEntry[]] = [
+          unitBuffers[0],
+          unitBuffers[1],
+          unitBuffers[2]
+        ];
+        nextBuffers[unitIndex] = [...unitBuffers[unitIndex].slice(1), generateLiveLine(unitIndex)];
+        unitBuffers = nextBuffers;
+
+        const nextProgress: [number, number, number] = [
+          unitProgress[0],
+          unitProgress[1],
+          unitProgress[2]
+        ];
+        nextProgress[unitIndex] = streaming
+          ? 64 + Math.floor(Math.random() * 36)
+          : 24 + Math.floor(Math.random() * 34);
+        unitProgress = nextProgress;
+
+        scheduleUnit(unitIndex);
+      }, nextUnitDelay(streaming));
+    };
+
+    for (let i = 0; i < UNITS.length; i++) {
+      scheduleUnit(i);
     }
-    intervalId = setInterval(() => {
-      unitBuffers = [
-        [...unitBuffers[0].slice(1), generateLiveLine(0)],
-        [...unitBuffers[1].slice(1), generateLiveLine(1)],
-        [...unitBuffers[2].slice(1), generateLiveLine(2)]
-      ];
-      unitProgress = [
-        activeStream ? 66 + Math.floor(Math.random() * 34) : 28 + Math.floor(Math.random() * 30),
-        activeStream ? 64 + Math.floor(Math.random() * 36) : 24 + Math.floor(Math.random() * 32),
-        activeStream ? 68 + Math.floor(Math.random() * 32) : 26 + Math.floor(Math.random() * 30)
-      ];
-    }, activeStream ? 520 : 920);
 
     return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
+      cancelled = true;
+      clearAllUnitTimers();
     };
   });
 
   onDestroy(() => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
+    clearAllUnitTimers();
   });
 </script>
 
