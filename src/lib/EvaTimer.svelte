@@ -33,9 +33,11 @@
     if (visMode === 'off') {
       resetWavesToBaseline();
       wasVisOff = true;
+      stopLoop();
     } else {
       wasVisOff = false;
       lastWaveRenderAt = 0;
+      resetDigitCache();
     }
   }
 
@@ -420,21 +422,21 @@
     wasIdle = false;
     frameCounter++;
 
-    const elapsed = Math.max(0, (now - basePerfTime) / 1000);
-    const estAudio = Math.min(Math.max(0, duration), baseAudioTime + elapsed);
-
-    // 1. Update 7-Segment Digital Clock with Shadow 8s
-    applyDigits(computeDisplaySecs(estAudio));
-
     if (visMode === 'off') {
       if (!wasVisOff) {
         wasVisOff = true;
         resetWavesToBaseline();
       }
-      rafId = requestAnimationFrame(tick);
+      rafId = null;
       return;
     }
     wasVisOff = false;
+
+    const elapsed = Math.max(0, (now - basePerfTime) / 1000);
+    const estAudio = Math.min(Math.max(0, duration), baseAudioTime + elapsed);
+
+    // 1. Update 7-Segment Digital Clock with Shadow 8s
+    applyDigits(computeDisplaySecs(estAudio));
 
     const minWaveInterval = visMode === 'hi' ? 0 : 28;
     if (minWaveInterval === 0 || now - lastWaveRenderAt >= minWaveInterval) {
@@ -535,6 +537,10 @@
     void isPlaying;
     void isAudioActuallyPlaying;
     void showRemaining;
+    if (visMode === 'off') {
+      stopLoop();
+      return;
+    }
     if (rafId === null) {
       startLoop();
     }
@@ -594,23 +600,24 @@
     <!-- Top Left Header: "AUDIOVISUAL" in bright electric orange -->
     <text x="18" y="30" class="audiovisual-title">AUDIOVISUAL</text>
 
-    <!-- Top Right 7-Segment Digital Clock (MM:SS:CC) with Shadow Digital 8s -->
-    <!-- Clickable to toggle between Remaining and Elapsed time -->
-    <g
-      transform="translate(738, 10) skewX(-5)"
-      class="digital-clock-group"
-      role="button"
-      tabindex="0"
-      onclick={() => { showRemaining = !showRemaining; resetDigitCache(); }}
-      onkeydown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          showRemaining = !showRemaining;
-          resetDigitCache();
-        }
-      }}
-      aria-label="Toggle Countdown / Elapsed Digital Timer"
-    >
+    {#if visMode !== 'off'}
+      <!-- Top Right 7-Segment Digital Clock (MM:SS:CC) with Shadow Digital 8s -->
+      <!-- Clickable to toggle between Remaining and Elapsed time -->
+      <g
+        transform="translate(738, 10) skewX(-5)"
+        class="digital-clock-group"
+        role="button"
+        tabindex="0"
+        onclick={() => { showRemaining = !showRemaining; resetDigitCache(); }}
+        onkeydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            showRemaining = !showRemaining;
+            resetDigitCache();
+          }
+        }}
+        aria-label="Toggle Countdown / Elapsed Digital Timer"
+      >
       <!-- Full bounding-box hit area so gaps between segments are clickable -->
       <rect x="-6" y="-4" width="136" height="33" fill="transparent" />
       <!-- Minute 1 -->
@@ -691,6 +698,7 @@
         <polygon points="7,26 10,23 24,23 27,26 24,29 10,29" class="seg sg" />
       </g>
     </g>
+    {/if}
 
     <!-- Far Right Edge: Rotated Vertical Duration in Cyan Formatted strictly as mm:ss:ms (7-Segment Digital matching Timer) -->
     <g
