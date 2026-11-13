@@ -953,9 +953,17 @@
       if (e.key === 'ArrowLeft') onSeek(Math.max(0, (currentTime - 5) / Math.max(1, duration)));
     }}
   >
+    <div class="eva-scrubber-spectrum" aria-hidden="true"></div>
     <div
-      class="eva-scrubber-fill"
-      style="transform: scaleX({progressPct})"
+      class="eva-scrubber-mask"
+      style="transform: scaleX({Math.max(0, Math.min(1, 1 - progressPct))})"
+      aria-hidden="true"
+    ></div>
+    <div class="eva-scrubber-ticks" aria-hidden="true"></div>
+    <div
+      class="eva-scrubber-head"
+      style="left: {Math.max(0, Math.min(100, progressPct * 100))}%"
+      aria-hidden="true"
     ></div>
   </div>
 </div>
@@ -1267,12 +1275,12 @@
     transition: stroke 0.08s ease;
   }
 
-  /* Scrubber Track */
+  /* Scrubber Track (Fixed-Spectrum Red -> Orange -> Light Blue Envelope) */
   .eva-scrubber-track {
     width: 100%;
-    height: 6px;
+    height: 8px;
     background: #0d0402;
-    border: 1px solid rgba(255, 119, 0, 0.6);
+    border: 1px solid rgba(255, 119, 0, 0.45);
     position: relative;
     cursor: pointer;
     margin-top: 6px;
@@ -1283,13 +1291,44 @@
     outline: 2px solid #00d4ff;
   }
 
-  .eva-scrubber-fill {
-    width: 100%;
-    height: 100%;
-    transform-origin: left center;
-    background: linear-gradient(90deg, #ff003c 0%, #ff7700 50%, #00d4ff 100%);
-    box-shadow: 0 0 8px #ff7700;
+  .eva-scrubber-spectrum {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, #ff1e38 0%, #ff7700 35%, #ffaa00 58%, #38bdf8 82%, #7dd3fc 100%);
+    pointer-events: none;
+  }
+
+  .eva-scrubber-mask {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 2, 2, 0.84);
+    transform-origin: right center;
     will-change: transform;
+    pointer-events: none;
+  }
+
+  .eva-scrubber-ticks {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 28px,
+      rgba(0, 0, 0, 0.35) 28px,
+      rgba(0, 0, 0, 0.35) 29px
+    );
+    pointer-events: none;
+  }
+
+  .eva-scrubber-head {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ffffff;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+    transform: translateX(-50%);
+    pointer-events: none;
   }
 
   /* SEELE 02 // SOUND ONLY Monolith */
