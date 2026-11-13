@@ -463,6 +463,38 @@
   const isBufferView = $derived((mode === 'listener' && currentBufferProgress < 100) || showBufferAnalysis);
   let currentTime = $state<number>(0);
   let duration = $state<number>(0);
+  function overflowMarquee(node: HTMLElement, _key: string) {
+    const measure = () => {
+      const inner = node.firstElementChild as HTMLElement | null;
+      if (!inner) return;
+      const overflow = Math.ceil(inner.scrollWidth - node.clientWidth);
+      if (overflow > 2) {
+        const dur = Math.max(4.5, Math.min(14, overflow * 0.055 + 2.5));
+        inner.style.setProperty('--marquee-shift', `-${overflow}px`);
+        inner.style.setProperty('--marquee-dur', `${dur.toFixed(2)}s`);
+        node.classList.add('is-scrolling');
+      } else {
+        node.classList.remove('is-scrolling');
+        inner.style.removeProperty('--marquee-shift');
+        inner.style.removeProperty('--marquee-dur');
+      }
+    };
+
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measure()) : null;
+    ro?.observe(node);
+    const raf = requestAnimationFrame(measure);
+
+    return {
+      update() {
+        requestAnimationFrame(measure);
+      },
+      destroy() {
+        cancelAnimationFrame(raf);
+        ro?.disconnect();
+      }
+    };
+  }
+
   function loadSavedVolume(): number {
     try {
       const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('p2p_vol_gain') : null;
@@ -2085,8 +2117,8 @@
                           <div class="phase-rail-fill" style="width: {priBufferTween.current}%"></div>
                           <div class="phase-rail-scanlines" aria-hidden="true"></div>
                           <div class="phase-rail-overlay">
-                            <span class="phase-name">
-                              CURRENT{currentTrack ? ` // ${currentTrack.title}` : ''}
+                            <span class="phase-name" use:overflowMarquee={currentTrack?.title || ''}>
+                              <span class="phase-name-inner">CURRENT{currentTrack ? ` // ${currentTrack.title}` : ''}</span>
                             </span>
                             <span class="phase-pct">{mode === 'dj' ? `${Math.round(priBufferTween.current)}% [HOST]` : `${Math.round(priBufferTween.current)}%`}</span>
                           </div>
@@ -2103,8 +2135,8 @@
                           <div class="phase-rail-fill" style="width: {auxBufferTween.current}%"></div>
                           <div class="phase-rail-scanlines" aria-hidden="true"></div>
                           <div class="phase-rail-overlay">
-                            <span class="phase-name">
-                              NEXT{nextTrack ? ` // ${nextTrack.title}` : ''}
+                            <span class="phase-name" use:overflowMarquee={nextTrack?.title || ''}>
+                              <span class="phase-name-inner">NEXT{nextTrack ? ` // ${nextTrack.title}` : ''}</span>
                             </span>
                             <span class="phase-pct">{nextTrack ? `${Math.round(auxBufferTween.current)}%` : 'STANDBY'}</span>
                           </div>
@@ -4261,11 +4293,39 @@
   }
 
   .phase-name {
+    flex: 1;
+    min-width: 0;
     color: #e8fff4;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .phase-name:global(.is-scrolling) {
+    text-overflow: clip;
+  }
+
+  .phase-name-inner {
+    display: inline-block;
+    white-space: nowrap;
+  }
+
+  .phase-name:global(.is-scrolling) .phase-name-inner {
+    animation: phase-marquee-pingpong var(--marquee-dur, 7s) ease-in-out infinite;
+    will-change: transform;
+  }
+
+  @keyframes phase-marquee-pingpong {
+    0%, 16% { transform: translateX(0); }
+    48%, 64% { transform: translateX(var(--marquee-shift, 0px)); }
+    96%, 100% { transform: translateX(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .phase-name:global(.is-scrolling) .phase-name-inner {
+      animation: none;
+    }
   }
 
   .phase-pct {
