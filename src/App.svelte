@@ -12,6 +12,42 @@
   import EvaBufferAnalysis from './lib/EvaBufferAnalysis.svelte';
   import SeeleMonolith from './lib/SeeleMonolith.svelte';
   import MagiComputing from './lib/MagiComputing.svelte';
+  import SystemDialog from './lib/SystemDialog.svelte';
+
+  let systemDialog = $state<{
+    open: boolean;
+    variant: 'critical' | 'warning';
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  }>({
+    open: false,
+    variant: 'critical',
+    title: '',
+    message: ''
+  });
+
+  function openStationConflictDialog(conflictId: string) {
+    systemDialog = {
+      open: true,
+      variant: 'critical',
+      title: 'STATION CALLSIGN CONFLICT',
+      message: `Station "${conflictId}" is already live with another DJ! Choose a different callsign or tune in as a listener.`,
+      confirmLabel: 'ACKNOWLEDGE',
+      cancelLabel: 'TUNE IN AS LISTENER',
+      onConfirm: () => {
+        systemDialog.open = false;
+      },
+      onCancel: () => {
+        systemDialog.open = false;
+        stationCode = conflictId;
+        joinAsListener();
+      }
+    };
+  }
 
   // App mode
   let mode = $state<'select' | 'dj' | 'listener'>('select');
@@ -183,7 +219,7 @@
     mesh.onGetMissingChunks = () => (player ? player.getMissingChunksInfo() : null);
 
     mesh.onStationConflict = (conflictStationId) => {
-      alert(`Station "${conflictStationId}" is already live with another DJ! Choose a different callsign or tune in as a listener.`);
+      openStationConflictDialog(conflictStationId);
       mode = 'select';
       isBroadcasting = false;
       isPlaying = false;
@@ -430,7 +466,7 @@
     } else {
       const cleanCode = rawCode.toLowerCase();
       if (await isStationLive(cleanCode)) {
-        alert(`Station "${rawCode}" is already live! Choose another callsign or tune in as a listener.`);
+        openStationConflictDialog(rawCode);
         return;
       }
       stationCode = cleanCode;
@@ -1244,6 +1280,17 @@
       </div>
     </aside>
   </div>
+
+  <SystemDialog
+    open={systemDialog.open}
+    variant={systemDialog.variant}
+    title={systemDialog.title}
+    message={systemDialog.message}
+    confirmLabel={systemDialog.confirmLabel}
+    cancelLabel={systemDialog.cancelLabel}
+    onConfirm={systemDialog.onConfirm}
+    onCancel={systemDialog.onCancel}
+  />
 </main>
 
 <style>
