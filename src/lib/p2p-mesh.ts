@@ -65,6 +65,8 @@ export class P2PMesh {
   private hasJoinedPyramid: boolean = false;
   private joinRetryTimer: any = null;
   private lastJoinRequestAt: number = 0;
+  private relayFailures: number = 0;
+  private relayEverConnected: boolean = false;
 
   // Chunk deduplication to prevent packet storms and endless re-relaying
   private seenChunks: Set<string> = new Set();
@@ -234,7 +236,8 @@ export class P2PMesh {
     clearInterval(this.relayPingInterval);
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/__p2p_relay`;
+    const stationParam = this.stationId ? `?station=${encodeURIComponent(this.stationId)}` : '';
+    const wsUrl = `${proto}//${window.location.host}/__p2p_relay${stationParam}`;
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -243,6 +246,8 @@ export class P2PMesh {
 
       ws.onopen = () => {
         this.relayConnected = true;
+        this.relayEverConnected = true;
+        this.relayFailures = 0;
         this.log(`[RELAY] Universal Tunnel Relay online (NAT/Firewall bypass ready)`);
         ws.send(JSON.stringify({
           type: 'register',
@@ -288,9 +293,12 @@ export class P2PMesh {
       ws.onclose = () => {
         this.relayConnected = false;
         clearInterval(this.relayPingInterval);
-        this.relayReconnectTimer = setTimeout(() => {
-          if (this.stationId) this.initRelaySocket();
-        }, 2500);
+        this.relayFailures++;
+        if (this.relayEverConnected || this.relayFailures < 2) {
+          this.relayReconnectTimer = setTimeout(() => {
+            if (this.stationId) this.initRelaySocket();
+          }, 2500);
+        }
       };
 
       ws.onerror = () => {
@@ -480,13 +488,7 @@ export class P2PMesh {
     const defaultIceServers: RTCIceServer[] = [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:stun.services.mozilla.com:3478' },
-      { urls: 'stun:stun.sipgate.net:3478' },
-      { urls: 'stun:global.stun.twilio.com:3478' }
+      { urls: 'stun:stun.cloudflare.com:3478' }
     ];
 
     const activeIceServers = (customIce && customIce.length > 0)
@@ -497,7 +499,7 @@ export class P2PMesh {
       debug: 1,
       config: {
         iceServers: activeIceServers,
-        iceCandidatePoolSize: 10
+        iceCandidatePoolSize: 2
       }
     });
 
@@ -555,29 +557,52 @@ export class P2PMesh {
 
     this.log(`Registering with DJ Orchestrator (${djPeerId})...`);
     let hasOpened = false;
+    let retryScheduled = false;
 
     const conn = this.peer.connect(djPeerId, {
       metadata: { role: 'control_channel' }
     });
 
-    this.attachPCDiagnostics(conn, djPeerId, 'ControlChannel', () => {
-      if (!this.hasJoinedPyramid) {
+    const scheduleWebRtcRetry = () => {
+      if (retryScheduled || this.isDJ || this.hasJoinedPyramid || this.djControlConn?.open) return;
+      retryScheduled = true;
+      setTimeout(() => this.connectToDJOrchestrator(), 2000);
+    };
+
+    const relayFallbackTimer = setTimeout(() => {
+      if (!hasOpened && !this.hasJoinedPyramid && this.relayConnected) {
         this.activateRelayControlFallback();
       }
-    });
+    }, 2500);
 
+    // Allow generous time for macOS mDNS (.local) -> STUN fallback on static SPA hosts
     const connectTimeout = setTimeout(() => {
       if (!hasOpened) {
-        if (!this.hasJoinedPyramid) {
+        try { conn.close(); } catch {}
+        if (!this.relayConnected && !this.hasJoinedPyramid) {
+          this.log(`⚠️ Direct WebRTC handshake timed out. Retrying DJ connection...`);
+          scheduleWebRtcRetry();
+        } else if (!this.hasJoinedPyramid) {
           this.activateRelayControlFallback();
         }
-        try { conn.close(); } catch {}
       }
-    }, 2500);
+    }, 12000);
+
+    this.attachPCDiagnostics(conn, djPeerId, 'ControlChannel', () => {
+      if (this.relayConnected) {
+        if (!this.hasJoinedPyramid) this.activateRelayControlFallback();
+      } else if (!hasOpened) {
+        clearTimeout(relayFallbackTimer);
+        clearTimeout(connectTimeout);
+        try { conn.close(); } catch {}
+        scheduleWebRtcRetry();
+      }
+    });
 
     conn.on('open', () => {
       hasOpened = true;
       this.usingRelayForControl = false;
+      clearTimeout(relayFallbackTimer);
       clearTimeout(connectTimeout);
       this.log(`⚡ Direct WebRTC Control channel established with DJ!`);
       this.djControlConn = conn;
@@ -595,18 +620,23 @@ export class P2PMesh {
     });
 
     conn.on('error', () => {
+      clearTimeout(relayFallbackTimer);
       clearTimeout(connectTimeout);
-      if (!this.hasJoinedPyramid) {
-        this.activateRelayControlFallback();
+      if (this.relayConnected) {
+        if (!this.hasJoinedPyramid) this.activateRelayControlFallback();
+      } else if (!hasOpened) {
+        try { conn.close(); } catch {}
+        scheduleWebRtcRetry();
       }
     });
 
     conn.on('close', () => {
+      clearTimeout(relayFallbackTimer);
       clearTimeout(connectTimeout);
       this.djControlConn = null;
       if (!this.relayConnected) {
         this.log(`⚠️ Lost control channel with DJ. Reconnecting...`);
-        setTimeout(() => this.connectToDJOrchestrator(), 2000);
+        scheduleWebRtcRetry();
       } else if (!this.hasJoinedPyramid) {
         this.activateRelayControlFallback();
       } else {
@@ -928,7 +958,7 @@ export class P2PMesh {
     }
 
     const fallbackTimer = setTimeout(() => {
-      if (!streamConnected) {
+      if (!streamConnected && this.relayConnected) {
         activateRelayStream();
       }
     }, 1800);
@@ -938,13 +968,37 @@ export class P2PMesh {
         metadata: { role: 'stream_channel' }
       });
 
+      let streamRetryScheduled = false;
+      const handleStreamFailure = () => {
+        if (this.relayConnected) {
+          activateRelayStream();
+          return;
+        }
+        if (streamConnected || streamRetryScheduled) return;
+        streamRetryScheduled = true;
+        clearTimeout(fallbackTimer);
+        clearTimeout(streamTimeout);
+        try { conn.close(); } catch {}
+        this.parentDataConn = null;
+        this.currentParentId = null;
+        this.log(`⚠️ Direct P2P stream with ${parentId} failed/timed out. Retrying...`);
+        setTimeout(() => this.connectToAssignedParent(parentId, depth), 2000);
+      };
+
+      const streamTimeout = setTimeout(() => {
+        if (!streamConnected && !this.usingRelayForParentStream && !this.relayConnected) {
+          handleStreamFailure();
+        }
+      }, 10000);
+
       this.attachPCDiagnostics(conn, parentId, 'StreamChannel', () => {
-        activateRelayStream();
+        handleStreamFailure();
       });
 
       conn.on('open', () => {
         streamConnected = true;
         clearTimeout(fallbackTimer);
+        clearTimeout(streamTimeout);
         this.usingRelayForParentStream = false;
         this.log(`⚡ Direct P2P audio stream pipeline connected with parent ${parentId}!`);
         this.parentDataConn = conn;
@@ -967,12 +1021,14 @@ export class P2PMesh {
       });
 
       conn.on('error', () => {
-        activateRelayStream();
+        handleStreamFailure();
       });
 
       conn.on('close', () => {
+        clearTimeout(fallbackTimer);
+        clearTimeout(streamTimeout);
         this.parentDataConn = null;
-        if (!this.usingRelayForParentStream) {
+        if (!this.usingRelayForParentStream && !streamRetryScheduled) {
           if (this.relayConnected) {
             activateRelayStream();
           } else {
