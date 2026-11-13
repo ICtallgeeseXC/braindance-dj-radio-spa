@@ -1119,6 +1119,8 @@
                 <h3>TRANSMISSION MANIFEST ({playlist.length})</h3>
               </div>
               <label class="icon-btn add-songs-btn">
+                <span class="cmd-led" aria-hidden="true"></span>
+                <span class="cmd-prefix">CMD //</span>
                 <span class="btn-glyph">{addingTracks ? '⏳' : '＋'}</span>
                 <span>{addingTracks ? 'ENCODING…' : 'INJECT TRACKS'}</span>
                 <input type="file" multiple accept=".mp3,.flac,audio/*" style="display:none" disabled={addingTracks} onchange={handleAddTracksLive} />
@@ -1207,14 +1209,25 @@
           <span class="log-indicator"><span class="log-beacon">◆</span> LIVE</span>
         </div>
         <div class="log-window">
-          {#each statusLogs as log}
+          <div class="log-terminal-bar">
+            <div class="log-dots-group">
+              <span class="log-dot red"></span>
+              <span class="log-dot amber"></span>
+              <span class="log-dot green"></span>
+              <span class="log-term-title">SURVEILLANCE.LOG</span>
+            </div>
+            <span class="log-term-sys">MAGI_SYS</span>
+          </div>
+          {#each statusLogs as log, idx}
             <div class="log-line">
+              <span class="log-seq">{String(idx + 1).padStart(3, '0')}</span>
               <span class="log-arrow">&gt;</span>
               <span class="log-text">{log}</span>
             </div>
           {/each}
           {#if statusLogs.length === 0}
             <div class="log-line text-muted">
+              <span class="log-seq">000</span>
               <span class="log-arrow">&gt;</span>
               <span>Awaiting peer connections...</span>
             </div>
@@ -3040,8 +3053,63 @@
     box-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
   }
 
+  .log-terminal-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(0, 240, 255, 0.22);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+  }
+
+  .log-dots-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .log-dot {
+    width: 7px;
+    height: 7px;
+    display: inline-block;
+  }
+
+  .log-dot.red { background: #ff2a4d; }
+  .log-dot.amber { background: #ff9900; }
+  .log-dot.green { background: #00ff66; }
+
+  .log-term-title {
+    margin-left: 6px;
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 700;
+  }
+
+  .log-term-sys {
+    color: rgba(148, 163, 184, 0.75);
+    font-size: 0.64rem;
+  }
+
+  .log-seq {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 0.64rem;
+    font-weight: 700;
+    color: #67e8f9;
+    background: rgba(0, 240, 255, 0.08);
+    border: 1px solid rgba(0, 240, 255, 0.22);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
   .log-line {
     display: flex;
+    align-items: flex-start;
     gap: 8px;
     color: #9fe6f7;
     word-break: break-word;

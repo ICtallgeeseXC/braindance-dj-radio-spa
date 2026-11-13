@@ -238,6 +238,10 @@
   </div>
   <div class="canvas-wrap">
     <canvas bind:this={canvas} class="tree-canvas"></canvas>
+    <div class="canvas-scanlines" aria-hidden="true"></div>
+    <div class="verdict-stamp" class:ok={peers.length > 0}>
+      {peers.length > 0 ? 'CHECK O.K.' : 'STANDBY'}
+    </div>
   </div>
   <div class="tree-legend">
     <div class="legend-item"><span class="hex-dot dj"></span> DJ ROOT</div>
@@ -311,6 +315,40 @@
   .canvas-wrap {
     width: 100%;
     position: relative;
+  }
+
+  .canvas-scanlines {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.28) 0px,
+      rgba(0, 0, 0, 0.28) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+  }
+
+  .verdict-stamp {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 3px 8px;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #ff9900;
+    background: rgba(8, 12, 22, 0.88);
+    border: 1px solid rgba(255, 119, 0, 0.55);
+    pointer-events: none;
+  }
+
+  .verdict-stamp.ok {
+    color: #00ff88;
+    border-color: rgba(0, 255, 136, 0.6);
+    text-shadow: 0 0 6px rgba(0, 255, 136, 0.55);
   }
 
   .tree-canvas {
