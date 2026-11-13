@@ -357,7 +357,7 @@
     height: 195px;
     background:
       radial-gradient(circle at center, rgba(255, 123, 0, 0.05) 0%, rgba(4, 6, 12, 0.98) 100%);
-    border: 1px solid rgba(0, 240, 255, 0.25);
+    border: 1px solid rgba(255, 119, 0, 0.35);
   }
 
   .tree-legend {

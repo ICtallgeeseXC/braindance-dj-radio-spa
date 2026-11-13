@@ -1198,8 +1198,8 @@
 
                 <div class="track-info">
                   <div class="track-header-row">
-                    <span class="telemetry-prefix">AUDIO_CH // ACTIVE_STREAM</span>
-                    <span class="sync-badge">SYNC: {isPlaying || isAudioActuallyPlaying ? '100.0%' : 'STANDBY'}</span>
+                    <span class="telemetry-prefix">音響解析 // AUDIO_CH // ACTIVE_STREAM</span>
+                    <span class="sync-badge">同期 // SYNC: {isPlaying || isAudioActuallyPlaying ? '100.0%' : 'STANDBY'}</span>
                   </div>
 
                   <h1 class="track-title">{currentTrack?.title || 'AWAITING TRANSMISSION...'}</h1>
@@ -3276,13 +3276,14 @@
   }
 
   .log-card {
-    background: #020409;
+    background: #020408;
     background-image:
-      linear-gradient(rgba(0, 240, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 240, 255, 0.035) 1px, transparent 1px);
+      linear-gradient(rgba(255, 119, 0, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 119, 0, 0.03) 1px, transparent 1px);
     background-size: 16px 16px;
-    border: 1.5px solid rgba(0, 240, 255, 0.38);
-    box-shadow: 0 0 22px rgba(0, 240, 255, 0.16), inset 0 0 14px rgba(0, 240, 255, 0.05);
+    border: 1px solid rgba(255, 119, 0, 0.42);
+    border-top: 2px solid #ff7700;
+    box-shadow: 0 0 18px rgba(0, 0, 0, 0.8), inset 0 0 14px rgba(255, 119, 0, 0.05);
     clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
     padding: 14px 16px;
     display: flex;
@@ -3295,15 +3296,9 @@
   .nerv-card-strip.cyan-strip {
     height: 3px;
     width: 100%;
-    background: repeating-linear-gradient(
-      -45deg,
-      #00f0ff 0px,
-      #00f0ff 8px,
-      #040814 8px,
-      #040814 16px
-    );
+    background: var(--hazard-amber);
     margin-bottom: 10px;
-    box-shadow: 0 0 8px rgba(0, 240, 255, 0.45);
+    opacity: 0.88;
   }
 
   .log-header {
@@ -3325,54 +3320,53 @@
 
   .log-title-wrap span:last-child {
     font-weight: 800;
-    color: #00f0ff;
-    text-shadow: 0 0 6px rgba(0, 240, 255, 0.5);
+    color: #ff9500;
+    text-shadow: 0 0 6px rgba(255, 119, 0, 0.45);
   }
 
   .log-code {
-    background: rgba(0, 240, 255, 0.15);
-    color: #00f0ff;
-    border: 1px solid rgba(0, 240, 255, 0.5);
+    background: rgba(255, 119, 0, 0.16);
+    color: #ff9500;
+    border: 1px solid rgba(255, 119, 0, 0.55);
     padding: 2px 7px;
     font-family: var(--font-mono);
     font-size: 0.68rem;
     font-weight: bold;
     clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
-    text-shadow: 0 0 6px rgba(0, 240, 255, 0.6);
   }
 
   .log-indicator {
     font-family: var(--font-mono);
-    color: #00f0ff;
+    color: #00ff88;
     font-weight: bold;
     font-size: 0.78rem;
     letter-spacing: 0.08em;
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    text-shadow: 0 0 6px rgba(0, 240, 255, 0.6);
+    text-shadow: 0 0 6px rgba(0, 255, 136, 0.5);
   }
 
   .log-beacon {
-    color: #00f0ff;
+    color: #00ff88;
     font-size: 0.7rem;
     animation: blink-beacon 0.8s infinite alternate ease-in-out;
   }
 
   @keyframes blink-beacon {
-    0% { opacity: 0.3; transform: scale(0.85); text-shadow: 0 0 2px #00f0ff; }
-    100% { opacity: 1; transform: scale(1.15); text-shadow: 0 0 10px #00f0ff; }
+    0% { opacity: 0.3; transform: scale(0.85); }
+    100% { opacity: 1; transform: scale(1.15); }
   }
 
   .log-window {
     background: #020408;
     background-image:
-      linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-      repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.025) 0px, rgba(0, 240, 255, 0.025) 1px, transparent 1px, transparent 3px);
+      linear-gradient(rgba(255, 119, 0, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 119, 0, 0.025) 1px, transparent 1px),
+      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0px, rgba(0, 0, 0, 0.35) 1px, transparent 1px, transparent 3px);
     background-size: 16px 16px, 16px 16px, 100% 3px;
-    border: 1px solid rgba(0, 240, 255, 0.35);
-    box-shadow: inset 0 0 18px rgba(0, 240, 255, 0.08), 0 0 10px rgba(0, 240, 255, 0.1);
+    border: 1px solid rgba(255, 119, 0, 0.32);
+    box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.85);
     padding: 12px;
     font-family: var(--font-mono);
     font-size: 0.8rem;
@@ -3390,13 +3384,12 @@
   }
 
   .log-window::-webkit-scrollbar-track {
-    background: #020610;
-    border: 1px solid rgba(0, 240, 255, 0.15);
+    background: #020408;
+    border: 1px solid rgba(255, 119, 0, 0.18);
   }
 
   .log-window::-webkit-scrollbar-thumb {
-    background: #00f0ff;
-    box-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+    background: #ff7700;
   }
 
   .log-terminal-bar {
@@ -3405,7 +3398,7 @@
     justify-content: space-between;
     padding-bottom: 8px;
     margin-bottom: 4px;
-    border-bottom: 1px solid rgba(0, 240, 255, 0.22);
+    border-bottom: 1px solid rgba(255, 119, 0, 0.24);
     font-size: 0.68rem;
     letter-spacing: 0.1em;
   }
