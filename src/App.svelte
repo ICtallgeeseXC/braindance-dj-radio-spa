@@ -1049,27 +1049,136 @@
     <div class="main-console">
       {#if mode === 'select'}
         <div class="welcome-card">
+          <div class="nerv-card-grid-bg" aria-hidden="true"></div>
+          <div class="nerv-card-scanlines" aria-hidden="true"></div>
+
           <div class="card-tech-bar">
-            <span class="tech-code">[ SYS.00 // OPERATION SELECT ]</span>
-            <span class="tech-jp">作戦選択 // ZERO-CLOUD P2P AUDIO RELAY</span>
+            <div class="tech-bar-left">
+              <span class="tech-led" aria-hidden="true"></span>
+              <span class="tech-code">[ SYS.00 // OPERATION SELECT ]</span>
+              <span class="tech-sub">CENTRAL_DOGMA // P2P_AUDIO_RELAY</span>
+            </div>
+            <span class="tech-jp">作戦選択 // 特務機関音響中継網</span>
           </div>
 
           <div class="welcome-hero">
-            <h2>DECENTRALIZED SYNCHRONIZED RADIO</h2>
-            <p>
-              The DJ acts as the Central Dogma broadcast origin. Zero cloud servers. Lossless FLAC &amp; MP3 streams are pre-buffered and relayed across a self-healing peer pyramid.
-            </p>
+            <div class="hero-copy">
+              <div class="hero-kicker">
+                <span class="kicker-tag">PRIORITY: AAA</span>
+                <span class="kicker-sep">//</span>
+                <span>ZERO-CLOUD PYRAMID TOPOLOGY</span>
+                <span class="kicker-sep">//</span>
+                <span>A10_SYNC: READY</span>
+              </div>
+              <h2>DECENTRALIZED SYNCHRONIZED RADIO</h2>
+              <p>
+                The DJ acts as the Central Dogma broadcast origin. Zero cloud servers. Lossless FLAC &amp; MP3 streams are pre-buffered and relayed across a self-healing peer pyramid.
+              </p>
+            </div>
+
+            <!-- NERV Harmonic Oscilloscope & Neural Sync Readout -->
+            <div class="hero-oscilloscope" aria-hidden="true">
+              <div class="osc-header">
+                <span>HARMONIC_SYNC // 波形同期</span>
+                <span class="osc-val">PHASE: +0.00</span>
+              </div>
+              <svg viewBox="0 0 260 76" class="osc-svg" preserveAspectRatio="none">
+                <defs>
+                  <pattern id="nerv-osc-grid" width="20" height="19" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 19" fill="none" stroke="rgba(255, 119, 0, 0.16)" stroke-width="0.6" />
+                  </pattern>
+                </defs>
+                <rect width="260" height="76" fill="url(#nerv-osc-grid)" />
+                <line x1="0" y1="38" x2="260" y2="38" stroke="rgba(255, 119, 0, 0.35)" stroke-width="0.8" stroke-dasharray="3 3" />
+                <line x1="130" y1="0" x2="130" y2="76" stroke="rgba(255, 119, 0, 0.25)" stroke-width="0.8" />
+                <!-- Secondary red/magenta harmonic -->
+                <path
+                  d="M0,38 Q32,8 65,38 T130,38 T195,38 T260,38"
+                  fill="none"
+                  stroke="#ff2a4d"
+                  stroke-width="1.4"
+                  opacity="0.78"
+                />
+                <!-- Primary phosphor green harmonic -->
+                <path
+                  d="M0,38 Q32,68 65,38 T130,38 T195,38 T260,38"
+                  fill="none"
+                  stroke="#39ff6a"
+                  stroke-width="1.6"
+                  opacity="0.9"
+                />
+                <!-- Carrier amber envelope -->
+                <path
+                  d="M0,38 C45,18 85,58 130,38 C175,18 215,58 260,38"
+                  fill="none"
+                  stroke="#ff8800"
+                  stroke-width="1.2"
+                  stroke-dasharray="4 2"
+                  opacity="0.85"
+                />
+              </svg>
+              <div class="osc-footer">
+                <span>00: ORIGIN</span>
+                <span class="osc-ok">SIGNAL: NOMINAL</span>
+                <span>02: MESH</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="nerv-hazard-divider" aria-hidden="true">
+            <span class="hazard-stripes"></span>
+            <span class="hazard-tag">SELECT DEPLOYMENT PROTOCOL // 配備選択</span>
+            <span class="hazard-stripes"></span>
           </div>
 
           <div class="choice-cards">
-            <!-- DJ Host Card -->
+            <!-- DJ Host Card (UNIT-01) -->
             <div class="action-card dj-card">
               <div class="unit-strip amber">
-                <span>UNIT-01 // TRANSMITTER</span>
-                <span>発信局 • SOURCE</span>
+                <div class="unit-id-group">
+                  <span class="unit-badge">01</span>
+                  <span>UNIT-01 // TRANSMITTER</span>
+                </div>
+                <span>初号機 • 発信局</span>
               </div>
-              <h3>🎧 HOST A STATION (DJ)</h3>
+
+              <div class="card-heading-row">
+                <span class="nerv-glyph amber" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M6.5 17.5a7.8 7.8 0 0 1 0-11M17.5 6.5a7.8 7.8 0 0 1 0 11" />
+                    <path d="M3.5 20.5a12 12 0 0 1 0-17M20.5 3.5a12 12 0 0 1 0 17" />
+                  </svg>
+                </span>
+                <div>
+                  <h3>HOST A STATION (DJ)</h3>
+                  <span class="card-subcode">MODE: BROADCAST_ORIGIN // 送信回路</span>
+                </div>
+              </div>
+
               <p>Drop lossless FLAC or MP3 tracks to broadcast directly from your browser into the P2P relay tree.</p>
+
+              <!-- NERV Segmented Telemetry Bars -->
+              <div class="unit-meter-strip" aria-hidden="true">
+                <div class="meter-row">
+                  <span class="meter-idx">00</span>
+                  <span class="meter-name">UPLINK_BUS</span>
+                  <div class="meter-segs">
+                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
+                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span>
+                  </div>
+                  <span class="meter-stat">RDY</span>
+                </div>
+                <div class="meter-row">
+                  <span class="meter-idx">01</span>
+                  <span class="meter-name">CODEC_STAGE</span>
+                  <div class="meter-segs green">
+                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
+                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
+                  </div>
+                  <span class="meter-stat ok">FLAC/MP3</span>
+                </div>
+              </div>
 
               <div class="toggle-compress-row">
                 <label class="toggle-label">
@@ -1082,7 +1191,7 @@
                         {autoCompressMp3 ? 'ENGAGED' : 'BYPASS'}
                       </span>
                     </span>
-                    <small>Cuts P2P relay bandwidth ~90% (25MB FLAC ➔ ~2MB MP3)</small>
+                    <small>Cuts P2P relay bandwidth ~90% (25MB FLAC -&gt; ~2MB MP3)</small>
                   </span>
                 </label>
               </div>
@@ -1090,36 +1199,67 @@
               <div class="file-dropzone">
                 <input type="file" multiple accept=".mp3,.flac,audio/*" onchange={handleFilesSelected} id="audio-input" />
                 <label for="audio-input" class="dropzone-label" class:ready={djFiles.length > 0}>
-                  {#if uploadProcessing}
-                    <span class="dropzone-tag">PROCESSING // 解析中</span>
-                    <span class="dropzone-main">⏳ {compressStatus || 'Parsing Audio Headers...'}</span>
-                  {:else if djFiles.length > 0}
-                    <span class="dropzone-tag ready">SIGNAL READY // 準備完了</span>
-                    <span class="dropzone-main">✅ {djFiles.length} {djFiles.length === 1 ? 'TRACK' : 'TRACKS'} ARMED FOR BROADCAST</span>
-                  {:else}
-                    <span class="dropzone-tag">INPUT_BAY // 音声入力</span>
-                    <span class="dropzone-main">📁 SELECT OR DROP FLAC &amp; MP3 FILES</span>
-                  {/if}
+                  <span class="dropzone-hazard" aria-hidden="true"></span>
+                  <span class="dropzone-body">
+                    {#if uploadProcessing}
+                      <span class="dropzone-tag">PROCESSING // 解析中</span>
+                      <span class="dropzone-main">{compressStatus || 'PARSING AUDIO HEADERS...'}</span>
+                    {:else if djFiles.length > 0}
+                      <span class="dropzone-tag ready">SIGNAL READY // 準備完了</span>
+                      <span class="dropzone-main">{djFiles.length} {djFiles.length === 1 ? 'TRACK' : 'TRACKS'} ARMED FOR BROADCAST</span>
+                    {:else}
+                      <span class="dropzone-tag">INPUT_BAY // 音声入力槽</span>
+                      <span class="dropzone-main">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <path d="M12 16V4m0 0-4 4m4-4 4 4" />
+                          <path d="M4 15v4h16v-4" />
+                        </svg>
+                        SELECT OR DROP FLAC &amp; MP3 FILES
+                      </span>
+                    {/if}
+                  </span>
+                  <span class="dropzone-hazard" aria-hidden="true"></span>
                 </label>
               </div>
 
               {#if djFiles.length > 0}
                 <div class="station-name-input">
-                  <input type="text" bind:value={stationCode} placeholder="Station Callsign (e.g. geofront-fm)" />
+                  <div class="nerv-input-wrap amber">
+                    <span class="input-prefix">CALLSIGN://</span>
+                    <input type="text" bind:value={stationCode} placeholder="geofront-fm" />
+                  </div>
                   <button type="button" class="primary-btn" onclick={startDJBroadcast}>
-                    ⚡ INITIATE TRANSMISSION
+                    INITIATE TRANSMISSION // 送信開始
                   </button>
                 </div>
               {/if}
             </div>
 
-            <!-- Listener Card -->
+            <!-- Listener Card (UNIT-02) -->
             <div class="action-card listener-card">
-              <div class="unit-strip cyan">
-                <span>UNIT-02 // RECEIVER</span>
-                <span>受信局 • RELAY</span>
+              <div class="unit-strip red">
+                <div class="unit-id-group">
+                  <span class="unit-badge red">02</span>
+                  <span>UNIT-02 // RECEIVER</span>
+                </div>
+                <span>弐号機 • 受信局</span>
               </div>
-              <h3>📻 TUNE IN (LISTENER)</h3>
+
+              <div class="card-heading-row">
+                <span class="nerv-glyph red" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" />
+                    <circle cx="12" cy="12" r="3" />
+                    <line x1="12" y1="2" x2="12" y2="9" />
+                    <line x1="12" y1="15" x2="12" y2="22" />
+                  </svg>
+                </span>
+                <div>
+                  <h3>TUNE IN (LISTENER)</h3>
+                  <span class="card-subcode red">MODE: MESH_RECEIVER // 同期受信</span>
+                </div>
+              </div>
+
               <p>Synchronize with a live station callsign. Tracks pre-buffer into local IndexedDB memory for zero-dropout playback.</p>
 
               <div class="nerv-spec-box">
@@ -1131,12 +1271,33 @@
                   <span>FAILOVER:</span>
                   <strong>AUTO-HEALING TREE MESH</strong>
                 </div>
+                <div class="spec-row">
+                  <span>BUFFER_STORE:</span>
+                  <strong class="ok">INDEXED_DB // 100MB RING</strong>
+                </div>
+              </div>
+
+              <!-- NERV Segmented Telemetry Bars -->
+              <div class="unit-meter-strip" aria-hidden="true">
+                <div class="meter-row">
+                  <span class="meter-idx red">02</span>
+                  <span class="meter-name">SYNC_RATIO</span>
+                  <div class="meter-segs red">
+                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
+                    <span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span>
+                  </div>
+                  <span class="meter-stat warn">STANDBY</span>
+                </div>
               </div>
 
               <div class="join-input-group">
-                <input type="text" bind:value={stationCode} placeholder="ENTER STATION CALLSIGN / CODE" />
+                <div class="nerv-input-wrap red">
+                  <span class="input-prefix">TARGET://</span>
+                  <input type="text" bind:value={stationCode} placeholder="ENTER STATION CALLSIGN" />
+                </div>
                 <button type="button" class="secondary-btn" disabled={!stationCode} onclick={joinAsListener}>
-                  📡 LOCK SIGNAL &amp; TUNE IN
+                  <span class="btn-led" aria-hidden="true"></span>
+                  LOCK SIGNAL &amp; TUNE IN
                 </button>
               </div>
             </div>
@@ -1797,22 +1958,25 @@
   /* MAGI Tri-System Telemetry Strip */
   .magi-strip {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 8px;
     margin-top: 10px;
   }
 
   .magi-cell {
-    background: rgba(8, 12, 22, 0.9);
-    border: 1px solid rgba(255, 123, 0, 0.28);
+    background: rgba(4, 7, 14, 0.94);
+    border: 1px solid rgba(255, 119, 0, 0.34);
     border-left: 3px solid var(--nerv-amber);
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
     padding: 6px 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 6px;
+    min-width: 0;
     font-family: var(--font-mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
   }
 
   .magi-cell.pattern-cell {
@@ -1832,11 +1996,15 @@
   .magi-id {
     color: var(--text-muted);
     font-weight: bold;
+    white-space: nowrap;
   }
 
   .magi-val {
     color: var(--nerv-amber);
     font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .magi-val.ok {
@@ -1880,11 +2048,45 @@
 
   /* Welcome / Operation Select Card */
   .welcome-card {
-    background: var(--bg-card);
-    border: 1px solid rgba(255, 123, 0, 0.4);
-    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
-    padding: clamp(16px, 3vw, 28px);
-    box-shadow: inset 0 0 30px rgba(255, 123, 0, 0.04);
+    position: relative;
+    overflow: hidden;
+    background: #03060c;
+    border: 1px solid rgba(255, 119, 0, 0.55);
+    clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
+    padding: clamp(16px, 2.8vw, 26px);
+    box-shadow:
+      inset 0 0 42px rgba(255, 119, 0, 0.08),
+      0 0 24px rgba(0, 0, 0, 0.75);
+  }
+
+  .nerv-card-grid-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 119, 0, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 119, 0, 0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+    z-index: 0;
+  }
+
+  .nerv-card-scanlines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.24) 0px,
+      rgba(0, 0, 0, 0.24) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    z-index: 0;
+  }
+
+  .welcome-card > *:not(.nerv-card-grid-bg):not(.nerv-card-scanlines) {
+    position: relative;
+    z-index: 1;
   }
 
   .card-tech-bar {
@@ -1893,44 +2095,189 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
-    padding-bottom: 10px;
-    margin-bottom: 14px;
-    border-bottom: 1px solid rgba(255, 123, 0, 0.28);
+    padding: 6px 10px;
+    margin-bottom: 16px;
+    background: rgba(255, 119, 0, 0.07);
+    border: 1px solid rgba(255, 119, 0, 0.35);
+    border-left: 4px solid #ff7700;
     font-family: var(--font-mono);
     font-size: 0.72rem;
     letter-spacing: 0.08em;
   }
 
+  .tech-bar-left {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tech-led {
+    width: 7px;
+    height: 7px;
+    background: #ff2a4d;
+    box-shadow: 0 0 8px #ff2a4d;
+  }
+
   .tech-code {
-    color: var(--nerv-amber);
+    color: #ff8800;
     font-weight: bold;
+    text-shadow: 0 0 6px rgba(255, 136, 0, 0.45);
+  }
+
+  .tech-sub {
+    color: #39ff6a;
+    font-size: 0.68rem;
+    letter-spacing: 0.09em;
   }
 
   .tech-jp {
-    color: var(--text-muted);
+    color: rgba(255, 175, 90, 0.78);
+    font-size: 0.68rem;
+  }
+
+  .welcome-hero {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    align-items: center;
+  }
+
+  @container (min-width: 760px) {
+    .welcome-hero {
+      grid-template-columns: 1.35fr 0.95fr;
+    }
+  }
+
+  @supports not (container-type: inline-size) {
+    @media (min-width: 860px) {
+      .welcome-hero {
+        grid-template-columns: 1.35fr 0.95fr;
+      }
+    }
+  }
+
+  .hero-kicker {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    color: rgba(255, 160, 70, 0.85);
+    margin-bottom: 6px;
+  }
+
+  .kicker-tag {
+    background: rgba(255, 42, 77, 0.22);
+    border: 1px solid rgba(255, 42, 77, 0.65);
+    color: #ff4466;
+    padding: 1px 6px;
+    font-weight: bold;
+  }
+
+  .kicker-sep {
+    color: rgba(255, 119, 0, 0.45);
   }
 
   .welcome-hero h2 {
     margin: 0 0 8px 0;
     font-family: var(--font-display);
-    color: var(--neon-cyan);
+    color: #ff9900;
     letter-spacing: 0.08em;
-    font-size: clamp(1.2rem, 2.4vw, 1.6rem);
-    text-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+    line-height: 1.12;
+    text-shadow:
+      0 0 8px rgba(255, 136, 0, 0.75),
+      0 0 22px rgba(255, 60, 0, 0.45);
   }
 
   .welcome-hero p {
     margin: 0;
-    color: var(--text-muted);
-    font-size: 0.98rem;
-    line-height: 1.45;
+    color: rgba(215, 224, 234, 0.84);
+    font-size: 0.92rem;
+    line-height: 1.48;
+  }
+
+  .hero-oscilloscope {
+    background: rgba(2, 5, 10, 0.95);
+    border: 1px solid rgba(255, 119, 0, 0.45);
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.9);
+  }
+
+  .osc-header,
+  .osc-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    color: rgba(255, 136, 0, 0.8);
+  }
+
+  .osc-val {
+    color: #ff2a4d;
+    font-weight: bold;
+  }
+
+  .osc-ok {
+    color: #39ff6a;
+    font-weight: bold;
+    text-shadow: 0 0 6px rgba(57, 255, 106, 0.5);
+  }
+
+  .osc-svg {
+    width: 100%;
+    height: 64px;
+    display: block;
+    border-top: 1px solid rgba(255, 119, 0, 0.22);
+    border-bottom: 1px solid rgba(255, 119, 0, 0.22);
+  }
+
+  .nerv-hazard-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0 4px;
+  }
+
+  .hazard-stripes {
+    flex: 1;
+    height: 6px;
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 119, 0, 0.52) 0px,
+      rgba(255, 119, 0, 0.52) 6px,
+      rgba(6, 9, 14, 0.95) 6px,
+      rgba(6, 9, 14, 0.95) 12px
+    );
+    border-top: 1px solid rgba(255, 119, 0, 0.35);
+    border-bottom: 1px solid rgba(255, 119, 0, 0.35);
+  }
+
+  .hazard-tag {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+    color: #ff8800;
+    white-space: nowrap;
+    padding: 2px 8px;
+    border: 1px solid rgba(255, 119, 0, 0.4);
+    background: rgba(255, 119, 0, 0.08);
   }
 
   .choice-cards {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 20px;
-    margin-top: 20px;
+    gap: 18px;
+    margin-top: 14px;
   }
 
   @container (min-width: 680px) {
@@ -1948,67 +2295,220 @@
   }
 
   .action-card {
-    background: rgba(6, 10, 20, 0.92);
-    border: 1px solid rgba(0, 240, 255, 0.28);
+    position: relative;
+    background: rgba(4, 7, 13, 0.94);
+    border: 1px solid rgba(255, 119, 0, 0.42);
     clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
-    padding: clamp(16px, 2.2vw, 22px);
+    padding: clamp(14px, 2.2vw, 20px);
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     min-width: 0;
     box-sizing: border-box;
+    box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.85);
   }
 
   .action-card.dj-card {
-    border-color: rgba(255, 123, 0, 0.45);
+    border-color: rgba(255, 119, 0, 0.58);
+    box-shadow: inset 0 0 26px rgba(255, 119, 0, 0.06);
   }
 
   .action-card.listener-card {
-    border-color: rgba(0, 240, 255, 0.4);
+    border-color: rgba(255, 42, 77, 0.58);
+    box-shadow: inset 0 0 26px rgba(255, 42, 77, 0.06);
   }
 
   .unit-strip {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 10px;
+    padding: 5px 10px;
     font-family: var(--font-mono);
     font-size: 0.7rem;
     font-weight: bold;
     letter-spacing: 0.08em;
   }
 
-  .unit-strip.amber {
-    background: rgba(255, 123, 0, 0.16);
-    color: var(--nerv-amber);
-    border-left: 3px solid var(--nerv-amber);
+  .unit-id-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
-  .unit-strip.cyan {
-    background: rgba(0, 240, 255, 0.12);
-    color: var(--neon-cyan);
-    border-left: 3px solid var(--neon-cyan);
+  .unit-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 16px;
+    padding: 0 4px;
+    background: #ff7700;
+    color: #03050a;
+    font-weight: 900;
+    font-size: 0.66rem;
+  }
+
+  .unit-badge.red {
+    background: #ff2a4d;
+    color: #03050a;
+  }
+
+  .unit-strip.amber {
+    background: rgba(255, 119, 0, 0.14);
+    color: #ff9900;
+    border-left: 3px solid #ff7700;
+    border-bottom: 1px solid rgba(255, 119, 0, 0.35);
+  }
+
+  .unit-strip.red {
+    background: rgba(255, 42, 77, 0.14);
+    color: #ff4d6d;
+    border-left: 3px solid #ff2a4d;
+    border-bottom: 1px solid rgba(255, 42, 77, 0.35);
+  }
+
+  .card-heading-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .nerv-glyph {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 119, 0, 0.5);
+    background: rgba(255, 119, 0, 0.08);
+    color: #ff8800;
+    clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+  }
+
+  .nerv-glyph.red {
+    border-color: rgba(255, 42, 77, 0.55);
+    background: rgba(255, 42, 77, 0.09);
+    color: #ff3b5c;
   }
 
   .action-card h3 {
     margin: 0;
     font-family: var(--font-display);
-    color: var(--neon-yellow);
+    color: #ffbb33;
     font-size: 1.05rem;
     letter-spacing: 0.08em;
+    text-shadow: 0 0 8px rgba(255, 153, 0, 0.35);
+  }
+
+  .card-subcode {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    color: #39ff6a;
+    margin-top: 2px;
+  }
+
+  .card-subcode.red {
+    color: rgba(255, 110, 130, 0.9);
   }
 
   .action-card p {
     margin: 0;
-    font-size: 0.94rem;
+    font-size: 0.9rem;
+    color: rgba(205, 215, 226, 0.82);
+    line-height: 1.42;
+  }
+
+  .unit-meter-strip {
+    background: rgba(2, 4, 9, 0.95);
+    border: 1px solid rgba(255, 119, 0, 0.25);
+    padding: 7px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+  }
+
+  .meter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .meter-idx {
+    color: #ff7700;
+    font-weight: bold;
+  }
+
+  .meter-idx.red {
+    color: #ff2a4d;
+  }
+
+  .meter-name {
     color: var(--text-muted);
-    line-height: 1.4;
+    min-width: 82px;
+  }
+
+  .meter-segs {
+    display: flex;
+    gap: 3px;
+    flex: 1;
+  }
+
+  .meter-segs .seg {
+    height: 8px;
+    flex: 1;
+    background: rgba(255, 119, 0, 0.14);
+    border: 1px solid rgba(255, 119, 0, 0.28);
+  }
+
+  .meter-segs .seg.on {
+    background: #ff7700;
+    box-shadow: 0 0 5px rgba(255, 119, 0, 0.65);
+  }
+
+  .meter-segs.green .seg {
+    background: rgba(57, 255, 106, 0.12);
+    border-color: rgba(57, 255, 106, 0.28);
+  }
+
+  .meter-segs.green .seg.on {
+    background: #39ff6a;
+    box-shadow: 0 0 5px rgba(57, 255, 106, 0.6);
+  }
+
+  .meter-segs.red .seg {
+    background: rgba(255, 42, 77, 0.12);
+    border-color: rgba(255, 42, 77, 0.3);
+  }
+
+  .meter-segs.red .seg.on {
+    background: #ff2a4d;
+    box-shadow: 0 0 5px rgba(255, 42, 77, 0.6);
+  }
+
+  .meter-stat {
+    color: #ff9900;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+  }
+
+  .meter-stat.ok {
+    color: #39ff6a;
+  }
+
+  .meter-stat.warn {
+    color: #ff4d6d;
   }
 
   .toggle-compress-row {
-    background: rgba(3, 6, 14, 0.95);
-    border: 1px solid rgba(255, 123, 0, 0.35);
-    padding: 12px;
+    background: rgba(3, 6, 12, 0.96);
+    border: 1px solid rgba(255, 119, 0, 0.4);
+    border-left: 3px solid #ff7700;
+    padding: 10px 12px;
     box-sizing: border-box;
   }
 
@@ -2024,14 +2524,15 @@
   }
 
   .toggle-switch {
-    width: 38px;
+    width: 40px;
     height: 20px;
-    background: #0b1324;
-    border: 1px solid rgba(255, 123, 0, 0.5);
+    background: #0a0f1a;
+    border: 1px solid rgba(255, 119, 0, 0.65);
     position: relative;
     transition: background 0.15s, border-color 0.15s;
     flex-shrink: 0;
     margin-top: 2px;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.85);
   }
 
   .toggle-switch::after {
@@ -2041,18 +2542,19 @@
     left: 2px;
     width: 14px;
     height: 14px;
-    background: var(--text-muted);
+    background: #8a95a5;
     transition: transform 0.18s ease, background 0.18s ease;
   }
 
   .toggle-label input[type="checkbox"]:checked + .toggle-switch {
-    background: rgba(255, 123, 0, 0.22);
-    border-color: var(--nerv-amber);
+    background: rgba(57, 255, 106, 0.16);
+    border-color: #39ff6a;
   }
 
   .toggle-label input[type="checkbox"]:checked + .toggle-switch::after {
-    transform: translateX(18px);
-    background: var(--nerv-amber);
+    transform: translateX(20px);
+    background: #39ff6a;
+    box-shadow: 0 0 8px rgba(57, 255, 106, 0.75);
   }
 
   .toggle-text {
@@ -2074,26 +2576,27 @@
   }
 
   .toggle-text strong {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--text-primary);
     letter-spacing: 0.04em;
   }
 
   .state-pill {
-    font-size: 0.65rem;
+    font-size: 0.62rem;
     padding: 1px 6px;
-    border: 1px solid rgba(140, 160, 190, 0.4);
-    color: var(--text-muted);
+    border: 1px solid rgba(255, 119, 0, 0.45);
+    color: #ff9900;
+    letter-spacing: 0.08em;
   }
 
   .state-pill.engaged {
-    background: rgba(0, 255, 102, 0.15);
-    border-color: var(--neon-green);
-    color: var(--neon-green);
+    background: rgba(57, 255, 106, 0.15);
+    border-color: #39ff6a;
+    color: #39ff6a;
   }
 
   .toggle-text small {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
     line-height: 1.3;
   }
@@ -2109,57 +2612,91 @@
   .dropzone-label {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
     box-sizing: border-box;
     width: 100%;
-    border: 1px dashed rgba(255, 123, 0, 0.55);
+    border: 1px dashed rgba(255, 119, 0, 0.65);
     clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
-    padding: 16px;
     text-align: center;
     cursor: pointer;
     font-family: var(--font-mono);
     transition: background 0.15s, border-color 0.15s;
-    background: rgba(255, 123, 0, 0.05);
+    background: rgba(255, 119, 0, 0.05);
+    overflow: hidden;
+  }
+
+  .dropzone-hazard {
+    display: block;
+    width: 100%;
+    height: 4px;
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 119, 0, 0.5) 0px,
+      rgba(255, 119, 0, 0.5) 5px,
+      #05080f 5px,
+      #05080f 10px
+    );
+  }
+
+  .dropzone-label.ready .dropzone-hazard {
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(57, 255, 106, 0.65) 0px,
+      rgba(57, 255, 106, 0.65) 5px,
+      #05080f 5px,
+      #05080f 10px
+    );
+  }
+
+  .dropzone-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 14px 16px;
   }
 
   .dropzone-label.ready {
     border-style: solid;
-    border-color: var(--neon-green);
-    background: rgba(0, 255, 102, 0.07);
+    border-color: #39ff6a;
+    background: rgba(57, 255, 106, 0.08);
   }
 
   .dropzone-label:hover {
-    border-color: var(--neon-cyan);
-    background: rgba(0, 240, 255, 0.1);
+    border-color: #ffbb33;
+    background: rgba(255, 119, 0, 0.12);
   }
 
   .dropzone-tag {
     font-size: 0.68rem;
-    color: var(--nerv-amber);
+    color: #ff8800;
     letter-spacing: 0.1em;
   }
 
   .dropzone-tag.ready {
-    color: var(--neon-green);
+    color: #39ff6a;
   }
 
   .dropzone-main {
-    font-size: 0.86rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.84rem;
     color: var(--text-primary);
     font-weight: bold;
+    letter-spacing: 0.05em;
   }
 
   .nerv-spec-box {
-    background: rgba(3, 6, 14, 0.9);
-    border: 1px solid rgba(0, 240, 255, 0.22);
+    background: rgba(2, 5, 10, 0.94);
+    border: 1px solid rgba(255, 42, 77, 0.35);
+    border-left: 3px solid #ff2a4d;
     padding: 10px 12px;
     display: flex;
     flex-direction: column;
     gap: 6px;
     font-family: var(--font-mono);
-    font-size: 0.74rem;
+    font-size: 0.72rem;
   }
 
   .spec-row {
@@ -2170,7 +2707,11 @@
   }
 
   .spec-row strong {
-    color: var(--neon-cyan);
+    color: #ff9900;
+  }
+
+  .spec-row strong.ok {
+    color: #39ff6a;
   }
 
   .station-name-input,
@@ -2181,12 +2722,51 @@
     margin-top: auto;
   }
 
+  .nerv-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #02050a;
+    border: 1px solid rgba(255, 119, 0, 0.5);
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    padding-left: 10px;
+  }
+
+  .nerv-input-wrap.red {
+    border-color: rgba(255, 42, 77, 0.55);
+  }
+
+  .nerv-input-wrap:focus-within {
+    border-color: #39ff6a;
+    box-shadow: 0 0 10px rgba(57, 255, 106, 0.2);
+  }
+
+  .input-prefix {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #ff8800;
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .nerv-input-wrap.red .input-prefix {
+    color: #ff4d6d;
+  }
+
+  .nerv-input-wrap input[type="text"] {
+    border: none;
+    clip-path: none;
+    background: transparent;
+    color: #39ff6a;
+    padding: 10px 12px 10px 6px;
+  }
+
   input[type="text"] {
     width: 100%;
     box-sizing: border-box;
     background: #03060e;
-    border: 1px solid rgba(0, 240, 255, 0.38);
-    color: var(--neon-cyan);
+    border: 1px solid rgba(255, 119, 0, 0.45);
+    color: #39ff6a;
     font-family: var(--font-mono);
     padding: 12px 14px;
     outline: none;
@@ -2204,7 +2784,7 @@
     font-family: var(--font-display);
     padding: 12px 18px;
     border: none;
-    transition: transform 0.12s, background 0.15s, opacity 0.15s;
+    transition: transform 0.12s, background 0.15s, opacity 0.15s, box-shadow 0.15s;
     letter-spacing: 0.09em;
     text-transform: uppercase;
     min-height: 44px;
@@ -2215,31 +2795,51 @@
   }
 
   .primary-btn {
-    background: linear-gradient(135deg, var(--nerv-amber), #ff3c00);
-    color: #04060c;
+    background: linear-gradient(135deg, #ff8800, #ff2a00);
+    color: #03050a;
     clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
     font-weight: 900;
+    box-shadow: 0 0 14px rgba(255, 119, 0, 0.35);
   }
 
   .primary-btn:hover {
-    background: linear-gradient(135deg, var(--neon-yellow), var(--nerv-amber));
+    background: linear-gradient(135deg, #ffbb33, #ff7700);
   }
 
   .secondary-btn {
-    background: rgba(0, 240, 255, 0.14);
-    color: var(--neon-cyan);
-    border: 1px solid var(--neon-cyan);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: linear-gradient(180deg, rgba(255, 42, 77, 0.22) 0%, rgba(110, 10, 26, 0.35) 100%);
+    color: #ff99aa;
+    border: 1px solid #ff2a4d;
     clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    box-shadow: inset 0 1px 0 rgba(255, 120, 140, 0.25), 0 0 12px rgba(255, 42, 77, 0.22);
+  }
+
+  .btn-led {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #39ff6a;
+    box-shadow: 0 0 7px #39ff6a;
+  }
+
+  .secondary-btn:disabled .btn-led {
+    background: #55333a;
+    box-shadow: none;
   }
 
   .secondary-btn:disabled {
-    opacity: 0.4;
+    opacity: 0.45;
     cursor: not-allowed;
   }
 
   .secondary-btn:hover:not(:disabled) {
-    background: var(--neon-cyan);
-    color: #04060c;
+    background: #ff2a4d;
+    color: #03050a;
+    box-shadow: 0 0 18px rgba(255, 42, 77, 0.5);
   }
 
   /* Active Broadcast Deck */
