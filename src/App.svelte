@@ -1119,21 +1119,21 @@
     }
   }
 
-  function toggleShuffle() {
-    isShuffled = !isShuffled;
-    if (isShuffled) {
-      const currentId = playlist[djActiveTrackIndex];
-      const rest = playlist.filter(id => id !== currentId);
-      for (let i = rest.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [rest[i], rest[j]] = [rest[j], rest[i]];
-      }
-      playlist = currentId ? [currentId, ...rest] : rest;
-      djActiveTrackIndex = 0;
+  function reshufflePlaylist() {
+    if (playlist.length < 2) return;
+    const currentId = playlist[djActiveTrackIndex];
+    const rest = playlist.filter(id => id !== currentId);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
     }
+    playlist = currentId ? [currentId, ...rest] : rest;
+    djActiveTrackIndex = 0;
+    isShuffled = true;
     syncPlaylistToListeners(
-      createDjAction('info', isShuffled ? 'DJ ENGAGED SHUFFLE QUEUE' : 'DJ DISENGAGED SHUFFLE')
+      createDjAction('info', 'DJ RESHUFFLED TRANSMISSION MANIFEST')
     );
+    statusLogs = [`[DJ] Reshuffled transmission manifest`, ...statusLogs.slice(0, 15)];
   }
 
   let draggedIndex = $state<number | null>(null);
@@ -1959,12 +1959,6 @@
             <div class="deck-controls-hazard"></div>
             <div class="transport-group">
               {#if mode === 'dj'}
-                <button type="button" class="icon-btn transport-btn" onclick={toggleShuffle} class:active={isShuffled} title="Shuffle Queue">
-                  <span class="cmd-led" aria-hidden="true"></span>
-                  <span class="cmd-prefix">CMD //</span>
-                  <span>{isShuffled ? 'SHUFFLE: ON' : 'SHUFFLE'}</span>
-                  <span class="btn-glyph">⤮</span>
-                </button>
                 <button type="button" class="main-play-btn" class:is-live={isPlaying} onclick={togglePlayPause}>
                   <span class="cmd-led" aria-hidden="true"></span>
                   <span class="cmd-prefix">TX //</span>
@@ -2061,13 +2055,27 @@
                 <span class="tech-code">MAGI // QUEUE</span>
                 <h3>TRANSMISSION MANIFEST [{String(playlist.length).padStart(2, '0')}]</h3>
               </div>
-              <label class="icon-btn add-songs-btn">
-                <span class="cmd-led" aria-hidden="true"></span>
-                <span class="cmd-prefix">CMD //</span>
-                <span class="btn-glyph">{addingTracks ? '•••' : '+'}</span>
-                <span>{addingTracks ? 'ENCODING…' : 'INJECT TRACKS'}</span>
-                <input type="file" multiple accept=".mp3,.flac,audio/*" style="display:none" disabled={addingTracks} onchange={handleAddTracksLive} />
-              </label>
+              <div class="queue-header-actions">
+                <button
+                  type="button"
+                  class="icon-btn add-songs-btn queue-action-btn"
+                  onclick={reshufflePlaylist}
+                  disabled={playlist.length < 2}
+                  title="Reshuffle Transmission Manifest"
+                >
+                  <span class="cmd-led" aria-hidden="true"></span>
+                  <span class="cmd-prefix">CMD //</span>
+                  <span class="btn-glyph">⤮</span>
+                  <span>RESHUFFLE</span>
+                </button>
+                <label class="icon-btn add-songs-btn">
+                  <span class="cmd-led" aria-hidden="true"></span>
+                  <span class="cmd-prefix">CMD //</span>
+                  <span class="btn-glyph">{addingTracks ? '•••' : '+'}</span>
+                  <span>{addingTracks ? 'ENCODING…' : 'INJECT TRACKS'}</span>
+                  <input type="file" multiple accept=".mp3,.flac,audio/*" style="display:none" disabled={addingTracks} onchange={handleAddTracksLive} />
+                </label>
+              </div>
             </div>
 
             {#if addingTracks}
@@ -4253,17 +4261,6 @@
     background: rgba(0, 240, 255, 0.12);
   }
 
-  .icon-btn.active {
-    background: rgba(255, 119, 0, 0.16);
-    color: #ffaa33;
-    border-color: #ff7700;
-  }
-
-  .icon-btn.active .cmd-led {
-    background: #ff7700;
-    box-shadow: 0 0 7px rgba(255, 119, 0, 0.85);
-  }
-
   .btn-glyph {
     font-family: var(--font-mono);
     font-weight: bold;
@@ -4443,12 +4440,24 @@
     text-shadow: 0 0 8px rgba(255, 119, 0, 0.45);
   }
 
+  .queue-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   .add-songs-btn {
     display: inline-flex;
     align-items: center;
     cursor: pointer;
     min-height: 34px;
     padding: 6px 14px;
+  }
+
+  .queue-action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .queue-list {
