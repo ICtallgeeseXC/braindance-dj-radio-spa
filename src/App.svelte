@@ -1806,11 +1806,11 @@
                 {mode === 'dj' ? 'DJ // ORIGIN' : 'LISTENER // RELAY'}
               </span>
             </div>
-            <div class="share-box">
-              <span class="share-label">UPLINK:</span>
+            <div class="uplink-controls">
+              <span class="uplink-label">UPLINK:</span>
               <button
                 type="button"
-                class="share-code-btn"
+                class="uplink-code-btn"
                 onclick={() => copyToClipboard(`${window.location.origin}/#${stationCode}`, 'STATION UPLINK COPIED')}
                 title="Click to copy station link"
               >
@@ -1821,10 +1821,10 @@
                 <span>{window.location.host}/#{stationCode}</span>
               </button>
               {#if mode === 'dj' && injectSecret}
-                <span class="share-label codj-label">CO-DJ:</span>
+                <span class="uplink-label codj-label">CO-DJ:</span>
                 <button
                   type="button"
-                  class="share-code-btn codj-key-btn"
+                  class="uplink-code-btn codj-key-btn"
                   onclick={() =>
                     copyToClipboard(
                       `${window.location.origin}/#${stationCode}?inject=${injectSecret}`,
@@ -3687,7 +3687,7 @@
     color: #ff4d6d;
   }
 
-  .share-box {
+  .uplink-controls {
     font-size: 0.76rem;
     color: var(--text-muted);
     display: flex;
@@ -3697,11 +3697,11 @@
     font-family: var(--font-mono);
   }
 
-  .share-label {
+  .uplink-label {
     color: #ff8800;
   }
 
-  .share-code-btn {
+  .uplink-code-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -3719,7 +3719,7 @@
     word-break: break-all;
   }
 
-  .share-code-btn:hover {
+  .uplink-code-btn:hover {
     border-color: #ff9900;
     color: #ffbb33;
   }
