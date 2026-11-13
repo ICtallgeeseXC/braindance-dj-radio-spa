@@ -778,99 +778,136 @@
       </g>
     </g>
 
-    <!-- 7 VERTICAL OSCILLOSCOPE CHANNELS -->
-    {#each CHANNELS as ch, i}
-      {@const chanX = 20 + i * 112}
-      {@const cx = chanX + 52}
+    <!-- 7 VERTICAL OSCILLOSCOPE CHANNELS OR SEELE 02 SOUND ONLY MONOLITH -->
+    {#if visMode !== 'off'}
+      {#each CHANNELS as ch, i}
+        {@const chanX = 20 + i * 112}
+        {@const cx = chanX + 52}
 
-      <g bind:this={chanGroups[i]} class="channel-column">
-        <!-- 1. Top Telemetry Box: "X: ..." -->
-        <g class="chan-telemetry-group">
+        <g bind:this={chanGroups[i]} class="channel-column">
+          <!-- 1. Top Telemetry Box: "X: ..." -->
+          <g class="chan-telemetry-group">
+            <rect
+              x={chanX + 22}
+              y="40"
+              width="60"
+              height="16"
+              fill="#0a0301"
+              class="chan-telemetry-box"
+              stroke-width="1.2"
+            />
+            <text
+              bind:this={telemetryTexts[i]}
+              x={cx}
+              y="52.5"
+              class="telemetry-coord-text"
+              text-anchor="middle"
+            >
+              X: -9.99
+            </text>
+          </g>
+
+          <!-- 2. Channel Oscilloscope Viewport Box -->
           <rect
             x={chanX + 22}
-            y="40"
+            y="62"
             width="60"
-            height="16"
-            fill="#0a0301"
-            class="chan-telemetry-box"
-            stroke-width="1.2"
+            height="233"
+            fill="#040101"
+            class="chan-viewport"
+            stroke-width="1.4"
           />
-          <text
-            bind:this={telemetryTexts[i]}
-            x={cx}
-            y="52.5"
-            class="telemetry-coord-text"
-            text-anchor="middle"
-          >
-            X: -9.99
-          </text>
-        </g>
 
-        <!-- 2. Channel Oscilloscope Viewport Box -->
+          <!-- 3. Horizontal Center Gate / Split Line -->
+          <line
+            x1={chanX + 22}
+            y1="178"
+            x2={chanX + 82}
+            y2="178"
+            class="chan-gate"
+            stroke-width="1.2"
+            stroke-opacity="0.9"
+          />
+
+          <!-- 4. Left Instrument Ruler with Tick Marks and Labels -->
+          <g class="chan-ruler">
+            <!-- Vertical scale baseline -->
+            <line x1={chanX + 16} y1="62" x2={chanX + 16} y2="295" stroke-width="0.9" />
+            <!-- Instrument tick marks along ruler -->
+            {#each Array(24) as _, tk}
+              <line
+                x1={chanX + 12}
+                y1={66 + tk * 9.6}
+                x2={chanX + 16}
+                y2={66 + tk * 9.6}
+                stroke-width="0.8"
+                stroke-opacity={tk % 4 === 0 ? 0.95 : 0.45}
+              />
+            {/each}
+            <!-- -01 / 01 Scale Numbers -->
+            <text x={chanX + 6} y="125" class="ruler-scale-num">-01</text>
+            <text x={chanX + 6} y="235" class="ruler-scale-num">01</text>
+
+            <!-- Vertical Rotated Channel Name Label -->
+            <text
+              x={chanX + 9}
+              y="178"
+              transform="rotate(-90 {chanX + 9} 178)"
+              class="chan-vertical-label"
+              text-anchor="middle"
+            >
+              8 {ch.name}
+            </text>
+          </g>
+
+          <!-- 5. Dynamic 60Hz Oscilloscope Waveform Path -->
+          <path
+            bind:this={wavePaths[i]}
+            d="M {cx - 24} 62 L {cx - 24} 295"
+            fill="none"
+            class="oscilloscope-wave"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </g>
+      {/each}
+    {:else}
+      <!-- SEELE 02 // SOUND ONLY Monolith -->
+      <g class="seele-monolith" class:speaking={isPlaying && isAudioActuallyPlaying}>
         <rect
-          x={chanX + 22}
-          y="62"
-          width="60"
-          height="233"
-          fill="#040101"
-          class="chan-viewport"
-          stroke-width="1.4"
-        />
-
-        <!-- 3. Horizontal Center Gate / Split Line -->
-        <line
-          x1={chanX + 22}
-          y1="178"
-          x2={chanX + 82}
-          y2="178"
-          class="chan-gate"
+          x="36"
+          y="54"
+          width="732"
+          height="242"
+          rx="2"
+          fill="#030203"
+          stroke="#1a1210"
           stroke-width="1.2"
-          stroke-opacity="0.9"
         />
+        <rect
+          x="38"
+          y="56"
+          width="728"
+          height="238"
+          fill="none"
+          stroke="rgba(255, 119, 0, 0.14)"
+          stroke-width="1"
+        />
+        <text x="402" y="84" text-anchor="middle" class="seele-top-label">SEELE 02</text>
+        <text x="402" y="176" text-anchor="middle" class="seele-sound-only">SOUND ONLY</text>
 
-        <!-- 4. Left Instrument Ruler with Tick Marks and Labels -->
-        <g class="chan-ruler">
-          <!-- Vertical scale baseline -->
-          <line x1={chanX + 16} y1="62" x2={chanX + 16} y2="295" stroke-width="0.9" />
-          <!-- Instrument tick marks along ruler -->
-          {#each Array(24) as _, tk}
-            <line
-              x1={chanX + 12}
-              y1={66 + tk * 9.6}
-              x2={chanX + 16}
-              y2={66 + tk * 9.6}
-              stroke-width="0.8"
-              stroke-opacity={tk % 4 === 0 ? 0.95 : 0.45}
-            />
-          {/each}
-          <!-- -01 / 01 Scale Numbers -->
-          <text x={chanX + 6} y="125" class="ruler-scale-num">-01</text>
-          <text x={chanX + 6} y="235" class="ruler-scale-num">01</text>
-
-          <!-- Vertical Rotated Channel Name Label -->
-          <text
-            x={chanX + 9}
-            y="178"
-            transform="rotate(-90 {chanX + 9} 178)"
-            class="chan-vertical-label"
-            text-anchor="middle"
-          >
-            8 {ch.name}
-          </text>
+        <!-- 4-bar speaking equalizer -->
+        <g transform="translate(388, 192)">
+          <rect x="0" y="10" width="4" height="8" class="seele-eq-bar b1" />
+          <rect x="7" y="4" width="4" height="14" class="seele-eq-bar b2" />
+          <rect x="14" y="8" width="4" height="10" class="seele-eq-bar b3" />
+          <rect x="21" y="2" width="4" height="16" class="seele-eq-bar b4" />
         </g>
 
-        <!-- 5. Dynamic 60Hz Oscilloscope Waveform Path -->
-        <path
-          bind:this={wavePaths[i]}
-          d="M {cx - 24} 62 L {cx - 24} 295"
-          fill="none"
-          class="oscilloscope-wave"
-          stroke-width="2.2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
+        <text x="402" y="274" text-anchor="middle" class="seele-bottom-id">02</text>
       </g>
-    {/each}
+    {/if}
 
     <!-- CRT Scan Line Effect Sweep Beam matching Buffer Loader -->
     {#if visMode !== 'off' && isPlaying && isAudioActuallyPlaying}
@@ -1234,5 +1271,49 @@
     background: linear-gradient(90deg, #ff003c 0%, #ff7700 50%, #00d4ff 100%);
     box-shadow: 0 0 8px #ff7700;
     will-change: transform;
+  }
+
+  /* SEELE 02 // SOUND ONLY Monolith */
+  .seele-top-label {
+    fill: rgba(255, 255, 255, 0.35);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.34em;
+  }
+
+  .seele-sound-only {
+    fill: #ff8c00;
+    font-family: var(--font-display);
+    font-size: 23px;
+    font-weight: 900;
+    letter-spacing: 0.22em;
+  }
+
+  .seele-bottom-id {
+    fill: rgba(255, 255, 255, 0.24);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.25em;
+  }
+
+  .seele-eq-bar {
+    fill: rgba(255, 140, 0, 0.35);
+    transform-box: fill-box;
+    transform-origin: center bottom;
+  }
+
+  .seele-monolith.speaking .seele-eq-bar {
+    fill: #ff9500;
+    animation: seele-eq-pulse 0.65s ease-in-out infinite alternate;
+  }
+
+  .seele-monolith.speaking .seele-eq-bar.b2 { animation-delay: 0.14s; }
+  .seele-monolith.speaking .seele-eq-bar.b3 { animation-delay: 0.28s; }
+  .seele-monolith.speaking .seele-eq-bar.b4 { animation-delay: 0.08s; }
+
+  @keyframes seele-eq-pulse {
+    0% { transform: scaleY(0.35); opacity: 0.6; }
+    100% { transform: scaleY(1); opacity: 1; }
   }
 </style>
