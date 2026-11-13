@@ -553,6 +553,19 @@
 </script>
 
 <div class="eva-audiovisual-panel" role="region" aria-label="AUDIOVISUAL Oscilloscope & Timer">
+  <div class="vis-top-bar">
+    <button
+      type="button"
+      class="vis-mode-pill"
+      class:is-lo={visMode === 'lo'}
+      class:is-hi={visMode === 'hi'}
+      class:is-off={visMode === 'off'}
+      onclick={cycleVisMode}
+      title="Cycle Visualizer Mode: LO (30fps) / HI (60fps) / OFF"
+    >
+      VIS: {visMode.toUpperCase()}
+    </button>
+  </div>
   <svg class="audiovisual-svg" viewBox="0 0 880 320" preserveAspectRatio="xMidYMid meet">
     <defs>
       <!-- Background Cyberpunk / NERV Grid Pattern matching Buffer Loader -->
@@ -574,30 +587,6 @@
 
     <!-- Top Left Header: "AUDIOVISUAL" in bright electric orange -->
     <text x="18" y="30" class="audiovisual-title">AUDIOVISUAL</text>
-
-    <!-- Visualizer Mode Toggle (OFF / LO / HI) - Centered in top bar between title and clock -->
-    <g
-      transform="translate(398, 11)"
-      class="vis-mode-toggle"
-      class:is-lo={visMode === 'lo'}
-      class:is-hi={visMode === 'hi'}
-      class:is-off={visMode === 'off'}
-      role="button"
-      tabindex="0"
-      onclick={cycleVisMode}
-      onkeydown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          cycleVisMode();
-        }
-      }}
-      aria-label="Visualizer Mode: {visMode.toUpperCase()} (click to switch OFF, LO, HI)"
-    >
-      <rect x="0" y="0" width="84" height="22" rx="2" class="vis-mode-box" />
-      <text x="42" y="15" text-anchor="middle" class="vis-mode-text">
-        VIS: {visMode.toUpperCase()}
-      </text>
-    </g>
 
     <!-- Top Right 7-Segment Digital Clock (MM:SS:CC) with Shadow Digital 8s -->
     <!-- Clickable to toggle between Remaining and Elapsed time -->
@@ -951,38 +940,44 @@
     overflow: visible;
   }
 
-  .vis-mode-toggle {
-    cursor: pointer;
-    outline: none;
+  .vis-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0 2px 4px 2px;
   }
-  .vis-mode-box {
-    fill: rgba(0, 212, 255, 0.14);
-    stroke: #00d4ff;
-    stroke-width: 1.4;
-  }
-  .vis-mode-text {
-    fill: #00d4ff;
+
+  .vis-mode-pill {
     font-family: 'Share Tech Mono', monospace;
-    font-size: 11px;
+    font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border-radius: 2px;
+    cursor: pointer;
+    background: rgba(0, 212, 255, 0.14);
+    color: #00d4ff;
+    border: 1px solid #00d4ff;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
-  .vis-mode-toggle.is-hi .vis-mode-box {
-    fill: rgba(255, 42, 77, 0.16);
-    stroke: #ff2a4d;
+  .vis-mode-pill:hover {
+    background: rgba(0, 212, 255, 0.25);
   }
-  .vis-mode-toggle.is-hi .vis-mode-text {
-    fill: #ff2a4d;
+  .vis-mode-pill.is-hi {
+    background: rgba(255, 42, 77, 0.16);
+    color: #ff2a4d;
+    border-color: #ff2a4d;
   }
-  .vis-mode-toggle.is-off .vis-mode-box {
-    fill: rgba(120, 40, 20, 0.18);
-    stroke: rgba(255, 119, 0, 0.4);
+  .vis-mode-pill.is-hi:hover {
+    background: rgba(255, 42, 77, 0.28);
   }
-  .vis-mode-toggle.is-off .vis-mode-text {
-    fill: rgba(255, 119, 0, 0.55);
+  .vis-mode-pill.is-off {
+    background: rgba(120, 40, 20, 0.18);
+    color: rgba(255, 119, 0, 0.65);
+    border-color: rgba(255, 119, 0, 0.4);
   }
-  .vis-mode-toggle:hover .vis-mode-box {
-    stroke-width: 2;
+  .vis-mode-pill.is-off:hover {
+    background: rgba(120, 40, 20, 0.32);
   }
 
   /* Header Typography matching reference image */
