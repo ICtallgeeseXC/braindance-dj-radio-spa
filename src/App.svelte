@@ -4,7 +4,7 @@
   import { cubicOut } from 'svelte/easing';
   import { P2PMesh, type StationState, type PeerNodeInfo, type ToastVariant, type StationActionEvent } from './lib/p2p-mesh';
   import { PlayerController } from './lib/player-controller';
-  import { parseAudioFile } from './lib/audio-metadata';
+  import { parseAudioFile, type TrackMetadata } from './lib/audio-metadata';
   import { CHUNK_SIZE, type TrackManifest } from './lib/chunk-pipeline';
   import { syncNetworkTime, getSyncedTime } from './lib/time-sync';
   import { readTrackChunkFromDisk, getTrackFromDisk } from './lib/audio-storage';
@@ -606,6 +606,10 @@
 
     mesh.onInjectTrackInit = (fromPeerId, manifest) => {
       if (!manifest?.trackId || !manifest.totalChunks) return;
+      if (findDuplicateManifest(manifest)) {
+        statusLogs = [`[CO-DJ] Ignored duplicate "${manifest.title}" from ${fromPeerId}`, ...statusLogs.slice(0, 15)];
+        return;
+      }
       pendingInjectedTracks.set(manifest.trackId, {
         manifest,
         chunks: new Array(manifest.totalChunks).fill(null),
@@ -624,6 +628,10 @@
       }
       if (entry.receivedCount === totalChunks) {
         pendingInjectedTracks.delete(trackId);
+        if (findDuplicateManifest(entry.manifest)) {
+          statusLogs = [`[CO-DJ] Dropped duplicate "${entry.manifest.title}" from ${entry.fromPeerId}`, ...statusLogs.slice(0, 15)];
+          return;
+        }
         const parts = entry.chunks.map((c) => new Blob([c ? new Uint8Array(c) : new Uint8Array(0)]));
         const ext = entry.manifest.mimeType.includes('flac') ? 'flac' : 'mp3';
         const assembled = new File(parts, `${entry.manifest.title || trackId}.${ext}`, { type: entry.manifest.mimeType });
@@ -691,6 +699,83 @@
 
   // --- DJ Actions ---
 
+  function normalizeMetaField(value?: string): string {
+    return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function isUnknownArtist(artist: string): boolean {
+    return !artist || artist === 'unknown artist' || artist === 'unknown';
+  }
+
+  function isSameTrackMeta(
+    a: { title?: string; artist?: string; duration?: number },
+    b: { title?: string; artist?: string; duration?: number }
+  ): boolean {
+    const titleA = normalizeMetaField(a.title);
+    const titleB = normalizeMetaField(b.title);
+    if (!titleA || titleA !== titleB) return false;
+
+    const artistA = normalizeMetaField(a.artist);
+    const artistB = normalizeMetaField(b.artist);
+    const bothKnownArtists = !isUnknownArtist(artistA) && !isUnknownArtist(artistB);
+    if (bothKnownArtists && artistA !== artistB) return false;
+
+    if (a.duration && b.duration && a.duration > 0 && b.duration > 0) {
+      if (Math.abs(a.duration - b.duration) > 3) return false;
+    }
+    return true;
+  }
+
+  function findDuplicateManifest(
+    candidate: { title?: string; artist?: string; duration?: number },
+    extraPending: Array<{ title?: string; artist?: string; duration?: number }> = []
+  ): boolean {
+    for (const id of playlist) {
+      const existing = trackManifests.get(id);
+      if (existing && isSameTrackMeta(existing, candidate)) return true;
+    }
+    for (const pending of pendingInjectedTracks.values()) {
+      if (isSameTrackMeta(pending.manifest, candidate)) return true;
+    }
+    for (const item of extraPending) {
+      if (isSameTrackMeta(item, candidate)) return true;
+    }
+    return false;
+  }
+
+  async function filterDuplicateFiles(
+    files: File[]
+  ): Promise<{ unique: Array<{ file: File; origMeta: TrackMetadata }>; skippedTitles: string[] }> {
+    const unique: Array<{ file: File; origMeta: TrackMetadata }> = [];
+    const acceptedMetas: TrackMetadata[] = [];
+    const skippedTitles: string[] = [];
+
+    for (const file of files) {
+      const origMeta = await parseAudioFile(file);
+      if (findDuplicateManifest(origMeta, acceptedMetas)) {
+        skippedTitles.push(origMeta.title || file.name);
+        continue;
+      }
+      acceptedMetas.push(origMeta);
+      unique.push({ file, origMeta });
+    }
+
+    if (skippedTitles.length > 0) {
+      const preview = skippedTitles[0];
+      const suffix = skippedTitles.length > 1 ? ` (+${skippedTitles.length - 1})` : '';
+      pushToast(
+        'warning',
+        `DUPLICATE SKIPPED: ${preview}${suffix}`
+      );
+      if (mode !== 'select') {
+        const tag = mode === 'listener' ? 'CO-DJ' : 'DJ';
+        statusLogs = [`[${tag}] Skipped duplicate(s): ${skippedTitles.join(', ')}`, ...statusLogs.slice(0, 15)];
+      }
+    }
+
+    return { unique, skippedTitles };
+  }
+
   function initCompressBatch(files: File[]) {
     compressStatus = '';
     compressBatchPct = 0;
@@ -701,7 +786,8 @@
   async function processAudioFile(
     origFile: File,
     idx: number,
-    total: number
+    total: number,
+    preParsedMeta?: TrackMetadata
   ): Promise<{ file: File; manifest: TrackManifest }> {
     let file = origFile;
     if (compressTracks[idx]) {
@@ -711,7 +797,7 @@
     compressBatchPct = Math.round((idx / total) * 100);
     compressStatus = `Processing track ${idx + 1}/${total}: ${origFile.name}...`;
 
-    const origMeta = await parseAudioFile(origFile);
+    const origMeta = preParsedMeta ?? (await parseAudioFile(origFile));
 
     if (autoCompressMp3) {
       try {
@@ -765,12 +851,12 @@
     compressBatchPct = 0;
   }
 
-  // Parse (and optionally transcode) files, registering them in the playlist. Returns new trackIds.
-  async function ingestFiles(files: File[]): Promise<string[]> {
+  // Parse (and optionally transcode) pre-deduped files, registering them in the playlist. Returns new trackIds.
+  async function ingestFiles(items: Array<{ file: File; origMeta: TrackMetadata }>): Promise<string[]> {
     const added: string[] = [];
 
-    for (let idx = 0; idx < files.length; idx++) {
-      const { file, manifest } = await processAudioFile(files[idx], idx, files.length);
+    for (let idx = 0; idx < items.length; idx++) {
+      const { file, manifest } = await processAudioFile(items[idx].file, idx, items.length, items[idx].origMeta);
       djFiles.push(file);
       trackFiles.set(manifest.trackId, file);
       trackManifests.set(manifest.trackId, manifest);
@@ -787,11 +873,14 @@
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
     const files = Array.from(input.files);
+    input.value = '';
     uploadProcessing = true;
-    initCompressBatch(files);
 
     try {
-      await ingestFiles(files);
+      const { unique } = await filterDuplicateFiles(files);
+      if (unique.length === 0) return;
+      initCompressBatch(unique.map((u) => u.file));
+      await ingestFiles(unique);
     } finally {
       resetCompressProgress();
       uploadProcessing = false;
@@ -805,10 +894,12 @@
     const files = Array.from(input.files);
     input.value = '';
     addingTracks = true;
-    initCompressBatch(files);
 
     try {
-      const added = await ingestFiles(files);
+      const { unique } = await filterDuplicateFiles(files);
+      if (unique.length === 0) return;
+      initCompressBatch(unique.map((u) => u.file));
+      const added = await ingestFiles(unique);
       if (added.length > 0) {
         statusLogs = [`[DJ] Added ${added.length} track(s) to the live playlist`, ...statusLogs.slice(0, 15)];
         const action = createDjAction(
@@ -830,11 +921,13 @@
     const files = Array.from(input.files);
     input.value = '';
     addingTracks = true;
-    initCompressBatch(files);
 
     try {
-      for (let idx = 0; idx < files.length; idx++) {
-        const { file, manifest } = await processAudioFile(files[idx], idx, files.length);
+      const { unique } = await filterDuplicateFiles(files);
+      if (unique.length === 0) return;
+      initCompressBatch(unique.map((u) => u.file));
+      for (let idx = 0; idx < unique.length; idx++) {
+        const { file, manifest } = await processAudioFile(unique[idx].file, idx, unique.length, unique[idx].origMeta);
         mesh.sendInjectTrackInit(manifest);
         const totalChunks = manifest.totalChunks;
         for (let c = 0; c < totalChunks; c++) {
