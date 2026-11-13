@@ -19,6 +19,7 @@ interface RelayClient {
   peerId: string;
   stationId: string;
   role: 'dj' | 'listener';
+  hostToken?: string;
   conn: RelayConnection;
 }
 
@@ -230,12 +231,22 @@ export function p2pRelayPlugin(): Plugin {
               const peerId = String(msg.peerId || '').trim();
               const stationId = String(msg.stationId || '').toLowerCase().trim();
               const role = msg.role === 'dj' ? 'dj' : 'listener';
+              const hostToken = typeof msg.hostToken === 'string' ? msg.hostToken.trim() : '';
               if (!peerId || !stationId) return;
+
+              const existing = clientsByPeerId.get(peerId);
+              if (existing && existing.conn.isOpen && (role === 'dj' || existing.role === 'dj')) {
+                if (!hostToken || existing.hostToken !== hostToken) {
+                  conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'station_in_use', stationId }));
+                  try { socket.end(); } catch {}
+                  return;
+                }
+              }
 
               registeredPeerId = peerId;
               registeredStationId = stationId;
 
-              clientsByPeerId.set(peerId, { peerId, stationId, role, conn });
+              clientsByPeerId.set(peerId, { peerId, stationId, role, hostToken: hostToken || undefined, conn });
               if (!stations.has(stationId)) {
                 stations.set(stationId, new Set());
               }

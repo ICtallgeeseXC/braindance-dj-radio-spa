@@ -63,6 +63,7 @@ export class P2PMesh {
   // Torrent-style swarm data channels (kept separate from pyramid childDataConns so live broadcasts don't push to swarm peers)
   private swarmConns: Map<string, DataConnection> = new Map();
   private lastSwarmPullAt: number = 0;
+  private hostToken: string = '';
   private usingRelayForControl: boolean = false;
   private usingRelayForParentStream: boolean = false;
   private hasJoinedPyramid: boolean = false;
@@ -94,6 +95,7 @@ export class P2PMesh {
   public onStatusMessage?: (msg: string) => void;
   public onRequestTrackChunks?: (targetPeerId: string, trackId: string, missingIndexes?: number[]) => void;
   public onGetMissingChunks?: () => { trackId: string; missingIndexes: number[] } | null;
+  public onStationConflict?: (stationId: string) => void;
 
   constructor() {
     this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
@@ -158,6 +160,9 @@ export class P2PMesh {
     this.isDJ = true;
     this.depth = 0;
     this.currentParentId = null;
+    this.hostToken = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
 
     const djPeerId = `station-${cleanStationId}-dj`;
     this.peerId = djPeerId;
@@ -257,7 +262,8 @@ export class P2PMesh {
           type: 'register',
           peerId: this.peerId,
           stationId: this.stationId,
-          role: this.isDJ ? 'dj' : 'listener'
+          role: this.isDJ ? 'dj' : 'listener',
+          ...(this.isDJ && this.hostToken ? { hostToken: this.hostToken } : {})
         }));
 
         // Keep tunnel WebSocket alive across reverse proxies / localtunnel
@@ -388,6 +394,16 @@ export class P2PMesh {
   }
 
   private handleRelayControlFrame(msg: any) {
+    if (msg.type === 'register_rejected') {
+      const rejectedStation = msg.stationId || this.stationId || '';
+      this.log(`🚨 Station "${rejectedStation}" is already hosted by another DJ! Connection rejected.`);
+      this.relayFailures = 999;
+      this.relayEverConnected = false;
+      clearTimeout(this.relayReconnectTimer);
+      this.onStationConflict?.(rejectedStation);
+      return;
+    }
+
     if (msg.type === 'relay_peer_disconnected' && this.isDJ) {
       const droppedId = msg.peerId;
       // Only prune immediately if they don't have an active direct WebRTC connection

@@ -168,6 +168,14 @@
 
     mesh.onGetMissingChunks = () => (player ? player.getMissingChunksInfo() : null);
 
+    mesh.onStationConflict = (conflictStationId) => {
+      alert(`Station "${conflictStationId}" is already live with another DJ! Choose a different callsign or tune in as a listener.`);
+      mode = 'select';
+      isBroadcasting = false;
+      isPlaying = false;
+      player?.pause();
+    };
+
     const repairTokens = new Map<string, number>();
     let nextRepairToken = 0;
 
@@ -384,10 +392,34 @@
     }
   }
 
+  async function isStationLive(code: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/__p2p_relay/status?station=${encodeURIComponent(code.toLowerCase().trim())}`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      return Boolean(data?.live);
+    } catch {
+      return false;
+    }
+  }
+
   async function startDJBroadcast() {
     if (!mesh || playlist.length === 0) return;
-    if (!stationCode) {
-      stationCode = 'radio-' + Math.random().toString(36).substring(2, 7);
+    const rawCode = stationCode.trim();
+    if (!rawCode) {
+      let candidate = 'radio-' + Math.random().toString(36).substring(2, 7);
+      for (let i = 0; i < 5; i++) {
+        if (!(await isStationLive(candidate))) break;
+        candidate = 'radio-' + Math.random().toString(36).substring(2, 7);
+      }
+      stationCode = candidate;
+    } else {
+      const cleanCode = rawCode.toLowerCase();
+      if (await isStationLive(cleanCode)) {
+        alert(`Station "${rawCode}" is already live! Choose another callsign or tune in as a listener.`);
+        return;
+      }
+      stationCode = cleanCode;
     }
     history.replaceState(null, '', '#' + stationCode);
 

@@ -9,6 +9,7 @@ interface PeerAttachment {
   peerId: string;
   stationId: string;
   role: 'dj' | 'listener';
+  hostToken?: string;
 }
 
 const textDecoder = new TextDecoder();
@@ -78,7 +79,24 @@ export class P2PRelayDO extends DurableObject<Env> {
         const peerId = String(msg.peerId || '').trim();
         const stationId = String(msg.stationId || '').toLowerCase().trim();
         const role: 'dj' | 'listener' = msg.role === 'dj' ? 'dj' : 'listener';
+        const hostToken = typeof msg.hostToken === 'string' ? msg.hostToken.trim() : '';
         if (!peerId || !stationId) return;
+
+        // Prevent hijacking: reject a different DJ trying to claim an already-live station
+        for (const other of this.ctx.getWebSockets()) {
+          if (other === ws) continue;
+          const meta = other.deserializeAttachment() as PeerAttachment | null;
+          if (!meta) continue;
+          const isDjCollision = (role === 'dj' || meta.role === 'dj') && meta.stationId === stationId && (meta.peerId === peerId || meta.role === 'dj');
+          if (isDjCollision && (!hostToken || meta.hostToken !== hostToken)) {
+            ws.serializeAttachment(null);
+            try {
+              ws.send(JSON.stringify({ type: 'register_rejected', reason: 'station_in_use', stationId }));
+              ws.close(4009, 'station_in_use');
+            } catch {}
+            return;
+          }
+        }
 
         // Clear any previous socket registered for the same peerId before attaching this one
         for (const other of this.ctx.getWebSockets()) {
@@ -90,7 +108,12 @@ export class P2PRelayDO extends DurableObject<Env> {
           }
         }
 
-        ws.serializeAttachment({ peerId, stationId, role } satisfies PeerAttachment);
+        ws.serializeAttachment({
+          peerId,
+          stationId,
+          role,
+          ...(hostToken ? { hostToken } : {})
+        } satisfies PeerAttachment);
         ws.send(JSON.stringify({ type: 'registered', peerId, stationId }));
       } else if (msg.type === 'signal' || msg.type === 'relay_control') {
         const sender = ws.deserializeAttachment() as PeerAttachment | null;
