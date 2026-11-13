@@ -1352,13 +1352,29 @@
       {:else}
         <!-- Active Player Deck -->
         <div class="deck-card">
+          <div class="nerv-card-grid-bg" aria-hidden="true"></div>
+          <div class="nerv-card-scanlines" aria-hidden="true"></div>
           <div class="nerv-hazard-banner"></div>
+
+          <div class="card-tech-bar deck-tech-bar">
+            <div class="tech-bar-left">
+              <span class="unit-badge" class:red={mode === 'listener'}>{mode === 'dj' ? '01' : '02'}</span>
+              <span class="tech-code">
+                {mode === 'dj' ? '[ SYS.01 // TRANSMITTER CONSOLE ]' : '[ SYS.01 // RECEIVER CONSOLE ]'}
+              </span>
+            </div>
+            <span class="tech-jp">
+              {mode === 'dj' ? '送信制御 // 中央作戦室' : '受信同期 // 端末機構'}
+            </span>
+          </div>
 
           <div class="deck-top">
             <div class="station-meta">
               <span class="live-dot"></span>
               <span class="station-title">STATION // {stationCode.toUpperCase()}</span>
-              <span class="role-tag">{mode === 'dj' ? 'DJ // ORIGIN' : 'LISTENER // RELAY'}</span>
+              <span class="role-tag" class:listener={mode === 'listener'}>
+                {mode === 'dj' ? 'DJ // ORIGIN' : 'LISTENER // RELAY'}
+              </span>
             </div>
             <div class="share-box">
               <span class="share-label">UPLINK:</span>
@@ -1368,7 +1384,11 @@
                 onclick={() => navigator.clipboard.writeText(window.location.href)}
                 title="Click to copy station link"
               >
-                {window.location.host}/#{stationCode} 📋
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="9" y="9" width="11" height="11" rx="1" />
+                  <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+                </svg>
+                <span>{window.location.host}/#{stationCode}</span>
               </button>
               <button
                 type="button"
@@ -1377,7 +1397,16 @@
                 onclick={() => (showBufferAnalysis = !showBufferAnalysis)}
                 title="Toggle Evangelion Buffer Analysis HUD"
               >
-                {showBufferAnalysis ? '◀ AUDIO DECK' : '📊 BUFFER ANALYSIS'}
+                {#if showBufferAnalysis}
+                  <span>&lsaquo; AUDIO DECK</span>
+                {:else}
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <line x1="5" y1="20" x2="5" y2="12" />
+                    <line x1="12" y1="20" x2="12" y2="6" />
+                    <line x1="19" y1="20" x2="19" y2="9" />
+                  </svg>
+                  <span>BUFFER ANALYSIS</span>
+                {/if}
               </button>
             </div>
           </div>
@@ -1399,6 +1428,8 @@
                 {#if currentTrack?.coverDataUrl}
                   <div class="cover-art" class:is-playing={isPlaying || isAudioActuallyPlaying}>
                     <img src={currentTrack.coverDataUrl} alt="Track Cover" />
+                    <span class="cover-hud-tag" aria-hidden="true">OPTICAL // 00</span>
+                    <span class="cover-scanlines" aria-hidden="true"></span>
                   </div>
                 {/if}
 
@@ -1514,7 +1545,9 @@
                   <button type="button" class="main-play-btn pulse" onclick={() => player?.resumeSync()}>
                     <span class="cmd-led" aria-hidden="true"></span>
                     <span class="cmd-prefix">RX //</span>
-                    <span class="play-icon">⚡</span>
+                    <svg class="play-icon" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
                     <span>ENGAGE AUDIO LINK</span>
                   </button>
                 {/if}
@@ -1567,7 +1600,7 @@
               <label class="icon-btn add-songs-btn">
                 <span class="cmd-led" aria-hidden="true"></span>
                 <span class="cmd-prefix">CMD //</span>
-                <span class="btn-glyph">{addingTracks ? '⏳' : '＋'}</span>
+                <span class="btn-glyph">{addingTracks ? '•••' : '+'}</span>
                 <span>{addingTracks ? 'ENCODING…' : 'INJECT TRACKS'}</span>
                 <input type="file" multiple accept=".mp3,.flac,audio/*" style="display:none" disabled={addingTracks} onchange={handleAddTracksLive} />
               </label>
@@ -2897,17 +2930,31 @@
 
   /* Active Broadcast Deck */
   .deck-card {
-    background: var(--bg-card);
-    border: 1px solid rgba(255, 123, 0, 0.45);
+    position: relative;
+    overflow: hidden;
+    background: #03060c;
+    border: 1px solid rgba(255, 119, 0, 0.55);
     clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
     padding: clamp(16px, 2.8vw, 26px);
+    box-shadow:
+      inset 0 0 42px rgba(255, 119, 0, 0.08),
+      0 0 24px rgba(0, 0, 0, 0.75);
+  }
+
+  .deck-card > *:not(.nerv-card-grid-bg):not(.nerv-card-scanlines) {
+    position: relative;
+    z-index: 1;
   }
 
   .nerv-hazard-banner {
     height: 4px;
     width: 100%;
     background: var(--hazard-crimson);
-    margin-bottom: 14px;
+    margin-bottom: 12px;
+  }
+
+  .deck-tech-bar {
+    margin-bottom: 12px;
   }
 
   .deck-top {
@@ -2916,8 +2963,8 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 12px;
-    margin-bottom: 20px;
-    border-bottom: 1px solid rgba(255, 123, 0, 0.28);
+    margin-bottom: 18px;
+    border-bottom: 1px solid rgba(255, 119, 0, 0.32);
     padding-bottom: 12px;
   }
 
@@ -2955,12 +3002,18 @@
 
   .role-tag {
     font-size: 0.68rem;
-    background: rgba(255, 123, 0, 0.16);
-    border: 1px solid var(--nerv-amber);
+    background: rgba(255, 119, 0, 0.16);
+    border: 1px solid #ff7700;
     padding: 2px 8px;
-    color: var(--nerv-amber);
+    color: #ff9900;
     font-family: var(--font-mono);
     font-weight: bold;
+  }
+
+  .role-tag.listener {
+    background: rgba(255, 42, 77, 0.16);
+    border-color: #ff2a4d;
+    color: #ff4d6d;
   }
 
   .share-box {
@@ -2974,18 +3027,21 @@
   }
 
   .share-label {
-    color: var(--nerv-amber);
+    color: #ff8800;
   }
 
   .share-code-btn {
-    background: #03060e;
-    border: 1px solid rgba(0, 240, 255, 0.4);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #02050a;
+    border: 1px solid rgba(57, 255, 106, 0.45);
     padding: 5px 10px;
     min-height: 32px;
-    color: var(--neon-cyan);
+    color: #39ff6a;
     cursor: pointer;
     font-family: var(--font-mono);
-    font-size: 0.76rem;
+    font-size: 0.74rem;
     text-transform: none;
     letter-spacing: 0.03em;
     clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
@@ -2993,18 +3049,21 @@
   }
 
   .share-code-btn:hover {
-    border-color: var(--nerv-amber);
-    color: var(--neon-yellow);
+    border-color: #ff9900;
+    color: #ffbb33;
   }
 
   .analysis-toggle-btn {
-    background: #03060e;
-    border: 1px solid var(--nerv-amber);
-    color: var(--nerv-amber);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #02050a;
+    border: 1px solid #ff7700;
+    color: #ff9900;
     padding: 5px 10px;
     min-height: 32px;
     font-family: var(--font-mono);
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     font-weight: bold;
     cursor: pointer;
     letter-spacing: 0.05em;
@@ -3079,7 +3138,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 119, 0, 0.38);
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
     box-shadow: 0 0 24px rgba(0, 0, 0, 0.9), inset 0 0 14px rgba(0, 0, 0, 0.95);
     position: relative;
     margin: 0 auto;
@@ -3087,14 +3147,43 @@
   }
 
   .cover-art.is-playing {
-    border-color: rgba(255, 123, 0, 0.4);
-    box-shadow: 0 0 26px rgba(255, 123, 0, 0.2), inset 0 0 14px rgba(0, 0, 0, 0.9);
+    border-color: rgba(255, 119, 0, 0.72);
+    box-shadow: 0 0 26px rgba(255, 119, 0, 0.25), inset 0 0 14px rgba(0, 0, 0, 0.9);
   }
 
   .cover-art img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+
+  .cover-hud-tag {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: rgba(2, 5, 10, 0.85);
+    border: 1px solid rgba(255, 119, 0, 0.55);
+    color: #ff9900;
+    font-family: var(--font-mono);
+    font-size: 0.54rem;
+    letter-spacing: 0.08em;
+    padding: 1px 5px;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .cover-scanlines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.22) 0px,
+      rgba(0, 0, 0, 0.22) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    z-index: 1;
   }
 
   .track-info {
@@ -3139,11 +3228,12 @@
 
   .track-artist {
     margin: 0 0 10px 0;
-    font-size: 1rem;
-    color: var(--neon-cyan);
+    font-size: 0.96rem;
+    color: #ff9900;
     font-weight: 600;
     font-family: var(--font-mono);
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
+    text-shadow: 0 0 8px rgba(255, 136, 0, 0.35);
   }
 
   .track-tags {
@@ -3162,21 +3252,21 @@
   }
 
   .tag.amber {
-    background: rgba(255, 123, 0, 0.14);
-    color: var(--nerv-amber);
-    border: 1px solid rgba(255, 123, 0, 0.45);
+    background: rgba(255, 119, 0, 0.14);
+    color: #ff9900;
+    border: 1px solid rgba(255, 119, 0, 0.5);
   }
 
   .tag.cyan {
-    background: rgba(0, 240, 255, 0.12);
-    color: var(--neon-cyan);
-    border: 1px solid rgba(0, 240, 255, 0.4);
+    background: rgba(255, 42, 77, 0.12);
+    color: #ff6b85;
+    border: 1px solid rgba(255, 42, 77, 0.45);
   }
 
   .tag.green {
-    background: rgba(0, 255, 102, 0.1);
-    color: var(--neon-green);
-    border: 1px solid rgba(0, 255, 102, 0.35);
+    background: rgba(57, 255, 106, 0.1);
+    color: #39ff6a;
+    border: 1px solid rgba(57, 255, 106, 0.4);
   }
 
   .buffer-meters.phase-rails {
