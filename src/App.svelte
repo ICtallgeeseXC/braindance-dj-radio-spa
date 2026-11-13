@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
-  import { P2PMesh, type StationState, type PeerNodeInfo } from './lib/p2p-mesh';
+  import { P2PMesh, type StationState, type PeerNodeInfo, type ToastVariant, type StationActionEvent } from './lib/p2p-mesh';
   import { PlayerController } from './lib/player-controller';
   import { parseAudioFile } from './lib/audio-metadata';
   import { CHUNK_SIZE, type TrackManifest } from './lib/chunk-pipeline';
@@ -15,6 +15,31 @@
   import SeeleMonolith from './lib/SeeleMonolith.svelte';
   import MagiComputing from './lib/MagiComputing.svelte';
   import SystemDialog from './lib/SystemDialog.svelte';
+  import SystemToast, { type ToastItem } from './lib/SystemToast.svelte';
+
+  let toasts = $state<ToastItem[]>([]);
+  let toastSeq = 0;
+  let lastSeenActionId = '';
+  let hasInitialListenerSync = false;
+
+  function dismissToast(id: string) {
+    toasts = toasts.filter((t) => t.id !== id);
+  }
+
+  function pushToast(variant: ToastVariant, message: string, durationMs = 3500) {
+    const id = `toast-${Date.now()}-${++toastSeq}`;
+    toasts = [...toasts.slice(-4), { id, variant, message, durationMs }];
+    setTimeout(() => dismissToast(id), durationMs + 80);
+  }
+
+  function createDjAction(variant: ToastVariant, message: string): StationActionEvent {
+    pushToast(variant, message);
+    return {
+      id: `${Date.now()}-${++toastSeq}`,
+      variant,
+      message
+    };
+  }
 
   let systemDialog = $state<{
     open: boolean;
@@ -432,7 +457,11 @@
       const added = await ingestFiles(files);
       if (added.length > 0) {
         statusLogs = [`[DJ] Added ${added.length} track(s) to the live playlist`, ...statusLogs.slice(0, 15)];
-        syncPlaylistToListeners();
+        const action = createDjAction(
+          'success',
+          `DJ INJECTED ${added.length} ${added.length === 1 ? 'TRACK' : 'TRACKS'} TO MANIFEST`
+        );
+        syncPlaylistToListeners(action);
       }
     } finally {
       compressStatus = '';
@@ -445,7 +474,7 @@
   }
 
   // Push the latest playlist/manifests/next-track to all listeners and pre-buffer the new next track if it changed
-  function syncPlaylistToListeners() {
+  function syncPlaylistToListeners(lastAction?: StationActionEvent) {
     if (!mesh) return;
     const manifestObj: Record<string, TrackManifest> = {};
     for (const [id, m] of trackManifests.entries()) manifestObj[id] = m;
@@ -459,6 +488,7 @@
       playlistOrder: [...playlist],
       isShuffled,
       nextTrackId: nextId,
+      ...(lastAction ? { lastAction } : {})
     });
 
     // If the next track changed, reset DJ next progress and pre-buffer if ready
@@ -557,6 +587,7 @@
       nextTrackId: nextId,
       trackManifests: manifestObj,
       playlistOrder: [...playlist],
+      lastAction: createDjAction('info', `NOW PLAYING: ${manifest.title}`)
     });
 
     // 2. Slice and broadcast chunks on demand down the P2P tree in paced, backpressure-guarded stream
@@ -652,7 +683,9 @@
       playlist = currentId ? [currentId, ...rest] : rest;
       djActiveTrackIndex = 0;
     }
-    syncPlaylistToListeners();
+    syncPlaylistToListeners(
+      createDjAction('info', isShuffled ? 'DJ ENGAGED SHUFFLE QUEUE' : 'DJ DISENGAGED SHUFFLE')
+    );
   }
 
   let draggedIndex = $state<number | null>(null);
@@ -687,7 +720,7 @@
     if (isShuffled) isShuffled = false;
 
     // Sync new sequence to mesh network and listeners
-    syncPlaylistToListeners();
+    syncPlaylistToListeners(createDjAction('info', 'DJ REORDERED TRANSMISSION MANIFEST'));
     statusLogs = [`[DJ] Manifest updated: track reordered`, ...statusLogs.slice(0, 15)];
   }
 
@@ -737,10 +770,17 @@
     isPlaying = !isPlaying;
     if (isPlaying) {
       stationStartTime = getSyncedTime() - (currentTime * 1000);
-      mesh.updateStationState({ isPlaying: true, startedAt: stationStartTime });
+      mesh.updateStationState({
+        isPlaying: true,
+        startedAt: stationStartTime,
+        lastAction: createDjAction('success', 'DJ RESUMED TRANSMISSION')
+      });
       player.play();
     } else {
-      mesh.updateStationState({ isPlaying: false });
+      mesh.updateStationState({
+        isPlaying: false,
+        lastAction: createDjAction('warning', 'DJ PAUSED TRANSMISSION')
+      });
       player.pause();
     }
   }
@@ -752,7 +792,11 @@
       const targetTime = fraction * dur;
       currentTime = targetTime;
       stationStartTime = getSyncedTime() - (targetTime * 1000);
-      mesh?.updateStationState({ isPlaying, startedAt: stationStartTime });
+      mesh?.updateStationState({
+        isPlaying,
+        startedAt: stationStartTime,
+        lastAction: createDjAction('info', `DJ SEEKED TO ${formatTime(targetTime)}`)
+      });
       player?.seek(targetTime);
     }
   }
@@ -761,6 +805,8 @@
 
   function joinAsListener() {
     if (!mesh || !stationCode) return;
+    hasInitialListenerSync = false;
+    lastSeenActionId = '';
     history.replaceState(null, '', '#' + stationCode);
     mode = 'listener';
     mesh.joinStation(stationCode);
@@ -800,6 +846,17 @@
 
     if (player) {
       player.updateStationTimeline(state);
+    }
+
+    if (mode === 'listener') {
+      if (!hasInitialListenerSync) {
+        hasInitialListenerSync = true;
+        lastSeenActionId = state.lastAction?.id || '';
+        pushToast('success', 'MAGI SYSTEM: Telemetry link established');
+      } else if (state.lastAction && state.lastAction.id !== lastSeenActionId) {
+        lastSeenActionId = state.lastAction.id;
+        pushToast(state.lastAction.variant, state.lastAction.message);
+      }
     }
   }
 
@@ -1319,6 +1376,8 @@
     onConfirm={systemDialog.onConfirm}
     onCancel={systemDialog.onCancel}
   />
+
+  <SystemToast {toasts} onDismiss={dismissToast} />
 </main>
 
 <style>

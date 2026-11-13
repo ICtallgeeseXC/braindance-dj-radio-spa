@@ -23,6 +23,14 @@ export interface PeerNodeInfo {
   transport?: 'webrtc' | 'relay';
 }
 
+export type ToastVariant = 'info' | 'success' | 'warning' | 'error' | 'critical';
+
+export interface StationActionEvent {
+  id: string;
+  variant: ToastVariant;
+  message: string;
+}
+
 export interface StationState {
   stationId: string;
   djPeerId: string;
@@ -33,6 +41,7 @@ export interface StationState {
   trackManifests: Record<string, TrackManifest>;
   playlistOrder: string[];
   isShuffled: boolean;
+  lastAction?: StationActionEvent;
 }
 
 export class P2PMesh {
