@@ -266,6 +266,7 @@
     chunks: (Uint8Array | null)[];
     receivedCount: number;
     fromPeerId: string;
+    lastChunkAt: number;
   }
   const pendingInjectedTracks = new Map<string, PendingInjectTrack>();
 
@@ -726,9 +727,35 @@
       }
     };
 
+    mesh.onInjectTrackExpired = (expiredTrackId) => {
+      const removed = pendingInjectedTracks.get(expiredTrackId);
+      if (removed) {
+        pendingInjectedTracks.delete(expiredTrackId);
+        statusLogs = [`[CO-DJ] Expired incomplete upload "${removed.manifest.title}" from ${removed.fromPeerId}`, ...statusLogs.slice(0, 15)];
+      }
+    };
+
+    mesh.onPeerDeparted = (droppedPeerId) => {
+      for (const [id, entry] of pendingInjectedTracks.entries()) {
+        if (entry.fromPeerId === droppedPeerId) {
+          pendingInjectedTracks.delete(id);
+          statusLogs = [`[CO-DJ] Cleared incomplete upload "${entry.manifest.title}" (${droppedPeerId} left)`, ...statusLogs.slice(0, 15)];
+        }
+      }
+    };
+
     mesh.onInjectTrackInit = (fromPeerId, manifest) => {
       const safeManifest = sanitizeTrackManifest(manifest);
       if (!safeManifest) return;
+
+      const now = Date.now();
+      for (const [id, entry] of pendingInjectedTracks.entries()) {
+        if (now - entry.lastChunkAt > 90_000) {
+          pendingInjectedTracks.delete(id);
+          mesh?.clearPendingInjectTrack(id);
+        }
+      }
+
       if (trackManifests.has(safeManifest.trackId) || pendingInjectedTracks.has(safeManifest.trackId)) {
         statusLogs = [`[CO-DJ] Rejected colliding trackId "${safeManifest.trackId}" from ${fromPeerId}`, ...statusLogs.slice(0, 15)];
         return;
@@ -745,7 +772,8 @@
         manifest: safeManifest,
         chunks: new Array(safeManifest.totalChunks).fill(null),
         receivedCount: 0,
-        fromPeerId
+        fromPeerId,
+        lastChunkAt: now
       });
       statusLogs = [`[CO-DJ] Receiving "${safeManifest.title}" from ${fromPeerId} (${safeManifest.totalChunks} chunks)`, ...statusLogs.slice(0, 15)];
     };
@@ -753,6 +781,7 @@
     mesh.onInjectedChunkReceived = (trackId, chunkIndex, totalChunks, data) => {
       const entry = pendingInjectedTracks.get(trackId);
       if (!entry || chunkIndex < 0 || chunkIndex >= entry.chunks.length) return;
+      entry.lastChunkAt = Date.now();
       if (!entry.chunks[chunkIndex]) {
         entry.chunks[chunkIndex] = new Uint8Array(data);
         entry.receivedCount++;
@@ -1273,9 +1302,11 @@
         // If track changed while broadcasting, stop
         if (playToken !== token) break;
 
-        while (mesh && mesh.shouldThrottleBroadcast(MAX_BUFFERED_BYTES)) {
+        let throttleWaitMs = 0;
+        while (mesh && mesh.shouldThrottleBroadcast(MAX_BUFFERED_BYTES) && throttleWaitMs < 2000) {
           if (playToken !== token) break;
           await new Promise(r => setTimeout(r, 20));
+          throttleWaitMs += 20;
         }
         if (playToken !== token) break;
 
@@ -1318,9 +1349,11 @@
       const MAX_BUFFERED_BYTES = 384 * 1024;
       for (let i = 0; i < totalChunks; i++) {
         if (preBufferToken !== token) break;
-        while (mesh && mesh.shouldThrottleBroadcast(MAX_BUFFERED_BYTES)) {
+        let throttleWaitMs = 0;
+        while (mesh && mesh.shouldThrottleBroadcast(MAX_BUFFERED_BYTES) && throttleWaitMs < 2000) {
           if (preBufferToken !== token) break;
           await new Promise(r => setTimeout(r, 20));
+          throttleWaitMs += 20;
         }
         if (preBufferToken !== token) break;
 

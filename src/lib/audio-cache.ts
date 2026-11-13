@@ -24,10 +24,11 @@ export async function saveTrackToCache(
   trackId: string,
   manifest: TrackManifest,
   blob: Blob,
-  _chunks?: ChunkPayload[]
+  _chunks?: ChunkPayload[],
+  protectedTrackIds?: Iterable<string>
 ): Promise<void> {
   await saveTrackToDisk(trackId, manifest, blob);
-  await purgeOldStorage();
+  await purgeOldStorage(protectedTrackIds);
 }
 
 export async function getTrackFromCache(trackId: string): Promise<CachedTrackRecord | null> {

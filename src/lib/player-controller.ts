@@ -386,7 +386,8 @@ export class PlayerController {
   private createTrackBuffer(manifest: TrackManifest): TrackBuffer {
     const buf = new TrackBuffer(manifest);
     buf.onComplete = (blob, _blobUrl) => {
-      saveTrackToCache(manifest.trackId, manifest, blob);
+      const protectedIds = [this.currentTrackId, this.nextTrackId].filter((id): id is string => Boolean(id));
+      saveTrackToCache(manifest.trackId, manifest, blob, undefined, protectedIds);
       if (this.currentTrackId === manifest.trackId) {
         this.mountCurrentTrack();
       }

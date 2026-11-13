@@ -272,31 +272,81 @@ export async function readTrackChunkFromDisk(
 /**
  * Clean up old tracks from storage to stay under MAX_STORAGE_BYTES quota.
  */
-export async function purgeOldStorage(): Promise<void> {
+export async function purgeOldStorage(protectedTrackIds?: Iterable<string>): Promise<void> {
+  const protectedSet = new Set<string>(protectedTrackIds || []);
+
   // Cache API purge
   if (isCacheAPISupported()) {
     try {
       const cache = await caches.open('p2p_radio_audio_v1');
       const keys = await cache.keys();
-      if (keys.length > 5) {
-        for (let i = 0; i < keys.length - 5; i++) {
-          await cache.delete(keys[i]);
+      const evictable = keys.filter((req) => {
+        const match = req.url.match(/\/track\/([^/?#]+)$/);
+        return !match || !protectedSet.has(match[1]);
+      });
+      if (evictable.length > 5) {
+        for (let i = 0; i < evictable.length - 5; i++) {
+          await cache.delete(evictable[i]);
         }
       }
     } catch {}
   }
 
-  // OPFS purge
+  // OPFS purge: evict stale temp files, orphan manifests, and oldest tracks beyond 5 files or quota
   if (isOPFSSupported()) {
     try {
       const root = await navigator.storage.getDirectory();
-      // Keep root tidy
-      for await (const [name] of (root as any).entries()) {
+      const tracks: Array<{ trackId: string; lastModified: number; size: number }> = [];
+      const manifestTrackIds: string[] = [];
+      let totalBytes = 0;
+
+      for await (const [name, handle] of (root as any).entries()) {
         if (name.startsWith('temp_')) {
           try {
             await root.removeEntry(name);
           } catch {}
+          continue;
         }
+        const trackMatch = /^track_(.+)\.bin$/.exec(name);
+        if (trackMatch && handle?.kind === 'file') {
+          try {
+            const file = await handle.getFile();
+            const size = file?.size || 0;
+            totalBytes += size;
+            tracks.push({
+              trackId: trackMatch[1],
+              lastModified: file?.lastModified || 0,
+              size
+            });
+          } catch {}
+          continue;
+        }
+        const manifestMatch = /^manifest_(.+)\.json$/.exec(name);
+        if (manifestMatch) {
+          manifestTrackIds.push(manifestMatch[1]);
+        }
+      }
+
+      const activeTrackSet = new Set(tracks.map((t) => t.trackId));
+      for (const orphanId of manifestTrackIds) {
+        if (!activeTrackSet.has(orphanId)) {
+          await root.removeEntry(`manifest_${orphanId}.json`).catch(() => {});
+        }
+      }
+
+      // Oldest first so newest 5 tracks are preserved unless quota requires further trimming
+      tracks.sort((a, b) => a.lastModified - b.lastModified);
+      let remainingCount = tracks.length;
+
+      for (const entry of tracks) {
+        if (protectedSet.has(entry.trackId)) continue;
+        if (remainingCount <= 5 && totalBytes <= MAX_STORAGE_BYTES) break;
+
+        opfsFileHandleCache.delete(entry.trackId);
+        await root.removeEntry(`track_${entry.trackId}.bin`).catch(() => {});
+        await root.removeEntry(`manifest_${entry.trackId}.json`).catch(() => {});
+        remainingCount--;
+        totalBytes = Math.max(0, totalBytes - entry.size);
       }
     } catch {}
   }

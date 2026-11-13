@@ -161,6 +161,8 @@ export class P2PMesh {
   public onInjectTrackInit?: (peerId: string, manifest: TrackManifest) => void;
   public onInjectedChunkReceived?: (trackId: string, chunkIndex: number, totalChunks: number, data: ArrayBuffer) => void;
   public onInjectTrackComplete?: (trackId: string) => void;
+  public onInjectTrackExpired?: (trackId: string) => void;
+  public onPeerDeparted?: (peerId: string) => void;
 
   private isPublicBroadcast = true;
   private injectSecret = '';
@@ -169,6 +171,7 @@ export class P2PMesh {
   private injectFailCounts = new Map<string, number>();
   private authorizedTrackSenders = new Map<string, string>();
   private pendingInjectManifests = new Map<string, TrackManifest>();
+  private injectLastActivityAt = new Map<string, number>();
   private parentReportCooldowns = new Map<string, number>();
   private inFlightChunkKeys = new Set<string>();
   private assignedParentId: string | null = null;
@@ -262,6 +265,7 @@ export class P2PMesh {
     this.injectFailCounts.clear();
     this.authorizedTrackSenders.clear();
     this.pendingInjectManifests.clear();
+    this.injectLastActivityAt.clear();
     this.parentReportCooldowns.clear();
     this.depth = 0;
     this.currentParentId = null;
@@ -314,16 +318,51 @@ export class P2PMesh {
       this.djKeyReadyPromise = Promise.resolve();
       return;
     }
-    this.djKeyReadyPromise = crypto.subtle
-      .generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'])
-      .then(async (kp) => {
-        this.djSigningKeyPair = kp;
-        this.djPublicJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
-      })
-      .catch(() => {
-        this.djSigningKeyPair = null;
-        this.djPublicJwk = null;
-      });
+
+    const storageKey = this.stationId ? `p2p_dj_signkey_${this.stationId}` : '';
+
+    this.djKeyReadyPromise = (async () => {
+      // Reuse persisted keypair across same-tab reloads so existing listeners keep verifying states
+      if (storageKey && typeof sessionStorage !== 'undefined') {
+        try {
+          const raw = sessionStorage.getItem(storageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as { privJwk?: JsonWebKey; pubJwk?: JsonWebKey };
+            if (
+              parsed?.privJwk?.kty === 'EC' &&
+              parsed?.privJwk?.crv === 'P-256' &&
+              parsed?.pubJwk?.kty === 'EC' &&
+              parsed?.pubJwk?.crv === 'P-256'
+            ) {
+              const [privateKey, publicKey] = await Promise.all([
+                crypto.subtle.importKey('jwk', parsed.privJwk, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']),
+                crypto.subtle.importKey('jwk', parsed.pubJwk, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify'])
+              ]);
+              this.djSigningKeyPair = { privateKey, publicKey };
+              this.djPublicJwk = parsed.pubJwk;
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+      const [privJwk, pubJwk] = await Promise.all([
+        crypto.subtle.exportKey('jwk', kp.privateKey),
+        crypto.subtle.exportKey('jwk', kp.publicKey)
+      ]);
+      this.djSigningKeyPair = kp;
+      this.djPublicJwk = pubJwk;
+
+      if (storageKey && typeof sessionStorage !== 'undefined') {
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify({ privJwk, pubJwk }));
+        } catch {}
+      }
+    })().catch(() => {
+      this.djSigningKeyPair = null;
+      this.djPublicJwk = null;
+    });
   }
 
   private enqueueSignedDjDispatch(sendFn: (signedMsg: any) => void, msg: Record<string, unknown>) {
@@ -360,8 +399,26 @@ export class P2PMesh {
     this.injectFailCounts.clear();
     this.authorizedTrackSenders.clear();
     this.pendingInjectManifests.clear();
+    this.injectLastActivityAt.clear();
     for (const peerId of prevInjectors) {
       this.sendControlToListener(peerId, { type: 'inject_authorized', authorized: false });
+    }
+  }
+
+  public clearPendingInjectTrack(trackId: string) {
+    this.authorizedTrackSenders.delete(trackId);
+    this.pendingInjectManifests.delete(trackId);
+    this.injectLastActivityAt.delete(trackId);
+  }
+
+  private cleanupStaleInjects(maxIdleMs = 90_000) {
+    if (!this.isDJ || this.injectLastActivityAt.size === 0) return;
+    const now = Date.now();
+    for (const [trackId, lastAt] of this.injectLastActivityAt.entries()) {
+      if (now - lastAt > maxIdleMs) {
+        this.clearPendingInjectTrack(trackId);
+        this.onInjectTrackExpired?.(trackId);
+      }
     }
   }
 
@@ -420,8 +477,7 @@ export class P2PMesh {
 
   public notifyInjectComplete(peerId: string, trackId: string) {
     if (!this.isDJ) return;
-    this.authorizedTrackSenders.delete(trackId);
-    this.pendingInjectManifests.delete(trackId);
+    this.clearPendingInjectTrack(trackId);
     this.sendControlToListener(peerId, { type: 'inject_track_complete', trackId });
   }
 
@@ -914,6 +970,22 @@ export class P2PMesh {
 
   // --- 5. Pure Binary Tree Capacity Placement ---
 
+  private async isAuthorizedStreamChild(remoteId: string): Promise<boolean> {
+    if (!this.isDJ) {
+      await this.listenerVerifyQueue;
+    }
+    const node = this.masterTreeMap.get(remoteId);
+    if (!node || node.parent !== this.peerId) return false;
+    return this.childDataConns.has(remoteId) || this.childDataConns.size < this.maxChildren;
+  }
+
+  private async isKnownStationPeer(remoteId: string): Promise<boolean> {
+    if (!this.isDJ) {
+      await this.listenerVerifyQueue;
+    }
+    return remoteId !== this.peerId && this.masterTreeMap.has(remoteId);
+  }
+
   private handleIncomingConnection(conn: DataConnection) {
     const remoteId = conn.peer;
 
@@ -922,47 +994,82 @@ export class P2PMesh {
       const isControl = role === 'control_channel';
       const isSwarm = role === 'swarm_channel';
 
-      if (this.isDJ && isControl) {
+      if (isControl) {
+        if (!this.isDJ) {
+          try { conn.close(); } catch {}
+          return;
+        }
         this.allListenerConns.set(remoteId, conn);
         const node = this.masterTreeMap.get(remoteId);
         if (node) node.transport = 'webrtc';
         this.log(`Listener ${remoteId} connected via direct WebRTC`);
       } else if (isSwarm) {
-        this.swarmConns.set(remoteId, conn);
-        this.log(`Swarm channel connected with ${remoteId}`);
+        void (async () => {
+          if (!(await this.isKnownStationPeer(remoteId)) || !conn.open) {
+            try { conn.close(); } catch {}
+            return;
+          }
+          this.swarmConns.set(remoteId, conn);
+          this.log(`Swarm channel connected with ${remoteId}`);
+        })();
       } else {
-        // Stream Data Channel (Audio chunks & link heartbeats)
-        this.log(`Direct P2P stream connected with ${remoteId}`);
-        this.childDataConns.set(remoteId, conn);
-        this.relayChildrenIds.delete(remoteId); // Upgrade from relay if direct succeeded
-        this.childrenIds.add(remoteId);
+        // Stream Data Channel: authorize strictly against masterTreeMap topology and maxChildren
+        void (async () => {
+          if (!(await this.isAuthorizedStreamChild(remoteId)) || !conn.open) {
+            try { conn.close(); } catch {}
+            return;
+          }
+          this.log(`Direct P2P stream connected with ${remoteId}`);
+          this.childDataConns.set(remoteId, conn);
+          this.relayChildrenIds.delete(remoteId); // Upgrade from relay if direct succeeded
+          this.childrenIds.add(remoteId);
+        })();
       }
     });
 
     conn.on('data', (data: any) => {
       const role = conn.metadata?.role;
-      if (this.isDJ && role === 'control_channel') {
+      if (role === 'control_channel') {
+        if (!this.isDJ) {
+          try { conn.close(); } catch {}
+          return;
+        }
         if (data instanceof ArrayBuffer) {
-          this.handleBinaryChunk(data, remoteId);
+          void this.handleBinaryChunk(data, remoteId);
         } else if (ArrayBuffer.isView(data)) {
           const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-          this.handleBinaryChunk(buf, remoteId);
+          void this.handleBinaryChunk(buf, remoteId);
         } else {
           this.handleListenerRequestToDJ(remoteId, data);
         }
       } else if (role === 'swarm_channel') {
-        if (!this.swarmConns.has(remoteId)) {
-          this.swarmConns.set(remoteId, conn);
+        if (this.swarmConns.get(remoteId) === conn) {
+          this.handleStreamData(data, remoteId);
+        } else {
+          void (async () => {
+            if (!(await this.isKnownStationPeer(remoteId)) || !conn.open) {
+              try { conn.close(); } catch {}
+              return;
+            }
+            this.swarmConns.set(remoteId, conn);
+            this.handleStreamData(data, remoteId);
+          })();
         }
-        this.handleStreamData(data, remoteId);
       } else {
-        // Ensure child is registered in childDataConns immediately even if 'open' event was delayed
-        if (!this.childDataConns.has(remoteId)) {
-          this.childDataConns.set(remoteId, conn);
-          this.relayChildrenIds.delete(remoteId);
-          this.childrenIds.add(remoteId);
+        if (this.childDataConns.get(remoteId) === conn) {
+          this.handleStreamData(data, remoteId);
+        } else {
+          void (async () => {
+            if (!(await this.isAuthorizedStreamChild(remoteId)) || !conn.open) {
+              try { conn.close(); } catch {}
+              return;
+            }
+            this.childDataConns.set(remoteId, conn);
+            this.relayChildrenIds.delete(remoteId);
+            this.childrenIds.add(remoteId);
+            this.handleStreamData(data, remoteId);
+          })();
         }
-        this.handleStreamData(data, remoteId);
       }
     });
 
@@ -1089,6 +1196,9 @@ export class P2PMesh {
         return;
       }
 
+      this.cleanupStaleInjects();
+      if (this.pendingInjectManifests.size >= 5) return;
+
       const safeManifest = sanitizeTrackManifest(data.manifest);
       if (!safeManifest) return;
       if (
@@ -1101,6 +1211,7 @@ export class P2PMesh {
       this.authorizedInjectors.add(newcomerId);
       this.authorizedTrackSenders.set(safeManifest.trackId, newcomerId);
       this.pendingInjectManifests.set(safeManifest.trackId, safeManifest);
+      this.injectLastActivityAt.set(safeManifest.trackId, Date.now());
       this.onInjectTrackInit?.(newcomerId, safeManifest);
     }
   }
@@ -1208,11 +1319,19 @@ export class P2PMesh {
       }
     }
 
-    // 2. Collect orphans of the departed node
+    // 2. Collect orphans of the departed node and purge any partial Co-DJ uploads owned by it
     const orphans = [...droppedNode.children];
     this.masterTreeMap.delete(droppedPeerId);
     this.relayChildrenIds.delete(droppedPeerId);
     this.childrenIds.delete(droppedPeerId);
+    this.authorizedInjectors.delete(droppedPeerId);
+    this.injectFailCounts.delete(droppedPeerId);
+    for (const [trackId, senderId] of this.authorizedTrackSenders.entries()) {
+      if (senderId === droppedPeerId) {
+        this.clearPendingInjectTrack(trackId);
+      }
+    }
+    this.onPeerDeparted?.(droppedPeerId);
 
     // 3. Immediately re-assign orphans to optimal new parents via shallowest BFS
     for (const orphanId of orphans) {
@@ -1740,6 +1859,7 @@ export class P2PMesh {
           }
         }
       }
+      this.cleanupStaleInjects();
     }, 3500);
   }
 
@@ -2006,6 +2126,7 @@ export class P2PMesh {
           return;
         }
       }
+      this.injectLastActivityAt.set(trackId, Date.now());
       this.onInjectedChunkReceived?.(trackId, chunkIndex, totalChunks, audioData);
       return;
     }
