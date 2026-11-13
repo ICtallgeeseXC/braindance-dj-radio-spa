@@ -10,13 +10,97 @@ interface PeerAttachment {
   stationId: string;
   role: 'dj' | 'listener';
   hostToken?: string;
+  isPublic?: boolean;
+  trackTitle?: string;
+}
+
+interface DirectoryEntry {
+  stationId: string;
+  listeners: number;
+  trackTitle?: string;
+  updatedAt: number;
 }
 
 const textDecoder = new TextDecoder();
+const DIRECTORY_TTL_MS = 120_000;
 
 export class P2PRelayDO extends DurableObject<Env> {
+  private getStationMetrics(stationId: string): { listeners: number; djMeta: PeerAttachment | null } {
+    let listeners = 0;
+    let djMeta: PeerAttachment | null = null;
+    for (const ws of this.ctx.getWebSockets()) {
+      const meta = ws.deserializeAttachment() as PeerAttachment | null;
+      if (!meta || meta.stationId !== stationId) continue;
+      if (meta.role === 'dj') djMeta = meta;
+      else listeners++;
+    }
+    return { listeners, djMeta };
+  }
+
+  private async syncDirectory(
+    action: 'upsert' | 'remove',
+    stationId: string,
+    listeners = 0,
+    trackTitle?: string
+  ): Promise<void> {
+    if (!stationId || stationId === '__directory__') return;
+    try {
+      const dirId = this.env.P2P_RELAY.idFromName('__directory__');
+      await this.env.P2P_RELAY.get(dirId).fetch(`https://relay.internal/__p2p_relay/directory/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stationId,
+          listeners,
+          trackTitle: trackTitle || undefined,
+          updatedAt: Date.now()
+        })
+      });
+    } catch {}
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/__p2p_relay/directory/upsert' && request.method === 'POST') {
+      const data = (await request.json().catch(() => null)) as DirectoryEntry | null;
+      if (data?.stationId) {
+        await this.ctx.storage.put(`station:${data.stationId}`, {
+          stationId: data.stationId,
+          listeners: Math.max(0, Number(data.listeners) || 0),
+          trackTitle: data.trackTitle ? String(data.trackTitle).slice(0, 120) : undefined,
+          updatedAt: Date.now()
+        } satisfies DirectoryEntry);
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (url.pathname === '/__p2p_relay/directory/remove' && request.method === 'POST') {
+      const data = (await request.json().catch(() => null)) as { stationId?: string } | null;
+      if (data?.stationId) {
+        await this.ctx.storage.delete(`station:${data.stationId}`);
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (url.pathname === '/__p2p_relay/stations' && request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+      const now = Date.now();
+      const entries = await this.ctx.storage.list<DirectoryEntry>({ prefix: 'station:' });
+      const active: DirectoryEntry[] = [];
+      const staleKeys: string[] = [];
+      for (const [key, entry] of entries) {
+        if (!entry || now - entry.updatedAt > DIRECTORY_TTL_MS) {
+          staleKeys.push(key);
+        } else {
+          active.push(entry);
+        }
+      }
+      if (staleKeys.length > 0) {
+        await this.ctx.storage.delete(staleKeys);
+      }
+      active.sort((a, b) => (b.listeners - a.listeners) || (b.updatedAt - a.updatedAt));
+      return Response.json({ stations: active });
+    }
+
     if (url.pathname === '/__p2p_relay/status' && request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       const station = (url.searchParams.get('station') || '').toLowerCase().trim();
       let live = false;
@@ -112,13 +196,24 @@ export class P2PRelayDO extends DurableObject<Env> {
           }
         }
 
+        const isPublic = isIncomingDj ? Boolean(msg.isPublic) : undefined;
+        const trackTitle = isIncomingDj && typeof msg.trackTitle === 'string' ? msg.trackTitle.trim().slice(0, 120) : undefined;
+
         ws.serializeAttachment({
           peerId,
           stationId,
           role,
-          ...(hostToken ? { hostToken } : {})
+          ...(hostToken ? { hostToken } : {}),
+          ...(isIncomingDj ? { isPublic, trackTitle } : {})
         } satisfies PeerAttachment);
         ws.send(JSON.stringify({ type: 'registered', peerId, stationId }));
+
+        const { listeners, djMeta } = this.getStationMetrics(stationId);
+        if (isIncomingDj) {
+          await this.syncDirectory(isPublic ? 'upsert' : 'remove', stationId, listeners, trackTitle);
+        } else if (djMeta?.isPublic) {
+          await this.syncDirectory('upsert', stationId, listeners, djMeta.trackTitle);
+        }
       } else if (msg.type === 'signal' || msg.type === 'relay_control') {
         const sender = ws.deserializeAttachment() as PeerAttachment | null;
         const targetPeerId = String(msg.to || '').trim();
@@ -150,6 +245,17 @@ export class P2PRelayDO extends DurableObject<Env> {
           }
         }
       } else if (msg.type === 'ping') {
+        const sender = ws.deserializeAttachment() as PeerAttachment | null;
+        if (sender?.role === 'dj' && sender.isPublic) {
+          const nextTitle = typeof msg.trackTitle === 'string'
+            ? msg.trackTitle.trim().slice(0, 120)
+            : sender.trackTitle;
+          if (nextTitle !== sender.trackTitle) {
+            ws.serializeAttachment({ ...sender, trackTitle: nextTitle } satisfies PeerAttachment);
+          }
+          const { listeners } = this.getStationMetrics(sender.stationId);
+          await this.syncDirectory('upsert', sender.stationId, listeners, nextTitle);
+        }
         ws.send(JSON.stringify({ type: 'pong' }));
       }
     } catch (err) {
@@ -158,14 +264,14 @@ export class P2PRelayDO extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket) {
-    this.cleanupSocket(ws);
+    await this.cleanupSocket(ws);
   }
 
   async webSocketError(ws: WebSocket) {
-    this.cleanupSocket(ws);
+    await this.cleanupSocket(ws);
   }
 
-  private cleanupSocket(ws: WebSocket) {
+  private async cleanupSocket(ws: WebSocket) {
     const meta = ws.deserializeAttachment() as PeerAttachment | null;
     ws.serializeAttachment(null);
     if (!meta?.peerId || !meta?.stationId) return;
@@ -179,6 +285,9 @@ export class P2PRelayDO extends DurableObject<Env> {
     }
 
     if (meta.peerId === djPeerId) {
+      if (meta.isPublic) {
+        await this.syncDirectory('remove', meta.stationId);
+      }
       const msg = JSON.stringify({ type: 'relay_dj_disconnected', stationId: meta.stationId });
       for (const other of this.ctx.getWebSockets()) {
         const otherMeta = other.deserializeAttachment() as PeerAttachment | null;
@@ -187,6 +296,11 @@ export class P2PRelayDO extends DurableObject<Env> {
         }
       }
       return;
+    }
+
+    const { listeners, djMeta } = this.getStationMetrics(meta.stationId);
+    if (djMeta?.isPublic) {
+      await this.syncDirectory('upsert', meta.stationId, listeners, djMeta.trackTitle);
     }
 
     for (const other of this.ctx.getWebSockets()) {
@@ -207,6 +321,10 @@ export class P2PRelayDO extends DurableObject<Env> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/__p2p_relay/stations') {
+      const id = env.P2P_RELAY.idFromName('__directory__');
+      return env.P2P_RELAY.get(id).fetch(request);
+    }
     if (url.pathname.startsWith('/__p2p_relay')) {
       const station = (url.searchParams.get('station') || 'global').toLowerCase().trim() || 'global';
       const id = env.P2P_RELAY.idFromName(station);

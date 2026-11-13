@@ -106,6 +106,14 @@ export class P2PMesh {
   public onGetMissingChunks?: () => { trackId: string; missingIndexes: number[] } | null;
   public onStationConflict?: (stationId: string) => void;
 
+  private isPublicBroadcast = true;
+
+  private getCurrentTrackTitle(): string {
+    const id = this.stationState?.currentTrackId;
+    if (!id) return '';
+    return this.stationState?.trackManifests?.[id]?.title || '';
+  }
+
   constructor() {
     this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
     this.bindWindowUnload();
@@ -163,10 +171,16 @@ export class P2PMesh {
 
   // --- 1. DJ Mode: Host Station as Orchestrator ---
 
-  public hostStation(stationId: string, initialManifests: Record<string, TrackManifest>, playlistOrder: string[]) {
+  public hostStation(
+    stationId: string,
+    initialManifests: Record<string, TrackManifest>,
+    playlistOrder: string[],
+    isPublic = true
+  ) {
     const cleanStationId = stationId.toLowerCase().trim();
     this.stationId = cleanStationId;
     this.isDJ = true;
+    this.isPublicBroadcast = isPublic;
     this.depth = 0;
     this.currentParentId = null;
     this.hostToken = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
@@ -272,13 +286,17 @@ export class P2PMesh {
           peerId: this.peerId,
           stationId: this.stationId,
           role: this.isDJ ? 'dj' : 'listener',
-          ...(this.isDJ && this.hostToken ? { hostToken: this.hostToken } : {})
+          ...(this.isDJ && this.hostToken ? { hostToken: this.hostToken } : {}),
+          ...(this.isDJ ? { isPublic: this.isPublicBroadcast, trackTitle: this.getCurrentTrackTitle() } : {})
         }));
 
         // Keep tunnel WebSocket alive across reverse proxies / localtunnel
         this.relayPingInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'ping' }));
+            ws.send(JSON.stringify({
+              type: 'ping',
+              ...(this.isDJ && this.isPublicBroadcast ? { trackTitle: this.getCurrentTrackTitle() } : {})
+            }));
           }
         }, 15000);
 

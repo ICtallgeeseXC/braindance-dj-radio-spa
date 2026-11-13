@@ -162,6 +162,50 @@
       ? localStorage.getItem('p2p_auto_compress_mp3') === 'true'
       : true
   );
+  let isPublicStation = $state<boolean>(
+    typeof localStorage !== 'undefined' && localStorage.getItem('p2p_public_station') !== null
+      ? localStorage.getItem('p2p_public_station') === 'true'
+      : true
+  );
+
+  interface PublicStationEntry {
+    stationId: string;
+    listeners: number;
+    trackTitle?: string;
+    updatedAt: number;
+  }
+
+  let publicStations = $state<PublicStationEntry[]>([]);
+  let publicStationsLoading = $state<boolean>(false);
+
+  async function fetchPublicStations() {
+    publicStationsLoading = true;
+    try {
+      const res = await fetch('/__p2p_relay/stations');
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = Array.isArray(data?.stations) ? (data.stations as PublicStationEntry[]) : [];
+      list.sort((a, b) => (b.listeners - a.listeners) || a.stationId.localeCompare(b.stationId));
+      publicStations = list;
+    } catch {
+      // ignore transient network errors
+    } finally {
+      publicStationsLoading = false;
+    }
+  }
+
+  $effect(() => {
+    try {
+      localStorage.setItem('p2p_public_station', String(isPublicStation));
+    } catch {}
+  });
+
+  $effect(() => {
+    if (mode !== 'select') return;
+    fetchPublicStations();
+    const timer = setInterval(fetchPublicStations, 12000);
+    return () => clearInterval(timer);
+  });
   let compressStatus = $state<string>('');
   let compressTrackPct = $state<number>(0);
   let compressBatchPct = $state<number>(0);
@@ -727,7 +771,7 @@
       for (const [id, m] of trackManifests.entries()) {
         manifestObj[id] = m;
       }
-      mesh.hostStation(stationCode, manifestObj, playlist);
+      mesh.hostStation(stationCode, manifestObj, playlist, isPublicStation);
       myPeerId = mesh.peerId;
     } catch (e) {
       console.error("Error hosting station:", e);
@@ -1295,6 +1339,26 @@
                 </label>
               </div>
 
+              <div class="toggle-compress-row">
+                <label class="toggle-label">
+                  <input type="checkbox" bind:checked={isPublicStation} />
+                  <span class="toggle-switch"></span>
+                  <span class="toggle-text">
+                    <span class="toggle-title-line">
+                      <strong>BROADCAST VISIBILITY</strong>
+                      <span class="state-pill" class:engaged={isPublicStation}>
+                        {isPublicStation ? 'PUBLIC' : 'PRIVATE'}
+                      </span>
+                    </span>
+                    <small>
+                      {isPublicStation
+                        ? 'Listed on live public directory ordered by listener count'
+                        : 'Unlisted — listeners join only via direct callsign or link'}
+                    </small>
+                  </span>
+                </label>
+              </div>
+
               <div class="file-dropzone">
                 <input type="file" multiple accept=".mp3,.flac,audio/*" onchange={handleFilesSelected} id="audio-input" />
                 <label for="audio-input" class="dropzone-label" class:ready={djFiles.length > 0}>
@@ -1419,6 +1483,50 @@
                   </div>
                   <span class="meter-stat warn">STANDBY</span>
                 </div>
+              </div>
+
+              <!-- Live Public Stations Directory -->
+              <div class="public-directory-box">
+                <div class="dir-header">
+                  <span class="dir-title">PUBLIC_STATIONS // 公開放送局</span>
+                  <button
+                    type="button"
+                    class="dir-scan-btn"
+                    onclick={fetchPublicStations}
+                    disabled={publicStationsLoading}
+                  >
+                    {publicStationsLoading ? 'SCANNING...' : 'RESCAN'}
+                  </button>
+                </div>
+
+                {#if publicStations.length === 0}
+                  <div class="dir-empty">NO PUBLIC TRANSMISSIONS DETECTED // ENTER CALLSIGN</div>
+                {:else}
+                  <div class="dir-list">
+                    {#each publicStations as st, idx (st.stationId)}
+                      <button
+                        type="button"
+                        class="dir-station-row"
+                        onclick={() => {
+                          stationCode = st.stationId;
+                          joinAsListener();
+                        }}
+                      >
+                        <span class="dir-rank">{String(idx + 1).padStart(2, '0')}</span>
+                        <span class="dir-live-pip" aria-hidden="true"></span>
+                        <span class="dir-station-info">
+                          <span class="dir-callsign">{st.stationId.toUpperCase()}</span>
+                          {#if st.trackTitle}
+                            <span class="dir-track">{st.trackTitle}</span>
+                          {/if}
+                        </span>
+                        <span class="dir-listeners">
+                          {st.listeners} {st.listeners === 1 ? 'LISTENER' : 'LISTENERS'}
+                        </span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
               </div>
 
               <div class="join-input-group">
@@ -2892,6 +3000,146 @@
 
   .spec-row strong.ok {
     color: #39ff6a;
+  }
+
+  .public-directory-box {
+    background: rgba(2, 5, 10, 0.94);
+    border: 1px solid rgba(255, 42, 77, 0.35);
+    border-left: 3px solid #ff2a4d;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: var(--font-mono);
+  }
+
+  .dir-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid rgba(255, 42, 77, 0.25);
+  }
+
+  .dir-title {
+    font-size: 0.66rem;
+    font-weight: bold;
+    letter-spacing: 0.09em;
+    color: #ff4d6d;
+  }
+
+  .dir-scan-btn {
+    min-height: 22px;
+    padding: 2px 8px;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    background: rgba(255, 42, 77, 0.14);
+    border: 1px solid rgba(255, 42, 77, 0.5);
+    color: #ff99aa;
+    clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px));
+  }
+
+  .dir-scan-btn:hover:not(:disabled) {
+    background: #ff2a4d;
+    color: #03050a;
+  }
+
+  .dir-scan-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+
+  .dir-empty {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    padding: 4px 2px;
+  }
+
+  .dir-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 156px;
+    overflow-y: auto;
+  }
+
+  .dir-station-row {
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    text-transform: none;
+    letter-spacing: 0.04em;
+    background: rgba(8, 12, 22, 0.95);
+    border: 1px solid rgba(57, 255, 106, 0.35);
+    color: var(--text-primary);
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
+  }
+
+  .dir-station-row:hover {
+    background: rgba(57, 255, 106, 0.12);
+    border-color: #39ff6a;
+  }
+
+  .dir-rank {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    color: #ff9900;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+
+  .dir-live-pip {
+    width: 6px;
+    height: 6px;
+    background: #39ff6a;
+    box-shadow: 0 0 6px #39ff6a;
+    flex-shrink: 0;
+  }
+
+  .dir-station-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+    gap: 1px;
+  }
+
+  .dir-callsign {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    font-weight: bold;
+    color: #39ff6a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dir-track {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dir-listeners {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    font-weight: bold;
+    color: #ff9900;
+    background: rgba(255, 119, 0, 0.14);
+    border: 1px solid rgba(255, 119, 0, 0.45);
+    padding: 2px 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .station-name-input,

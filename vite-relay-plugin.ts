@@ -20,6 +20,8 @@ interface RelayClient {
   stationId: string;
   role: 'dj' | 'listener';
   hostToken?: string;
+  isPublic?: boolean;
+  trackTitle?: string;
   conn: RelayConnection;
 }
 
@@ -248,7 +250,19 @@ export function p2pRelayPlugin(): Plugin {
               registeredPeerId = peerId;
               registeredStationId = stationId;
 
-              clientsByPeerId.set(peerId, { peerId, stationId, role, hostToken: hostToken || undefined, conn });
+              const isPublic = isIncomingDj ? Boolean(msg.isPublic) : undefined;
+              const trackTitle = isIncomingDj && typeof msg.trackTitle === 'string'
+                ? msg.trackTitle.trim().slice(0, 120)
+                : undefined;
+
+              clientsByPeerId.set(peerId, {
+                peerId,
+                stationId,
+                role,
+                hostToken: hostToken || undefined,
+                ...(isIncomingDj ? { isPublic, trackTitle } : {}),
+                conn
+              });
               if (!stations.has(stationId)) {
                 stations.set(stationId, new Set());
               }
@@ -290,6 +304,12 @@ export function p2pRelayPlugin(): Plugin {
                 }
               }
             } else if (msg.type === 'ping') {
+              if (registeredPeerId) {
+                const c = clientsByPeerId.get(registeredPeerId);
+                if (c && c.role === 'dj' && typeof msg.trackTitle === 'string') {
+                  c.trackTitle = msg.trackTitle.trim().slice(0, 120) || undefined;
+                }
+              }
               conn.sendText(JSON.stringify({ type: 'pong' }));
             }
           } catch (err) {
@@ -323,6 +343,31 @@ export function p2pRelayPlugin(): Plugin {
   }
 
   function setupStatusMiddleware(middlewares: any) {
+    middlewares.use('/__p2p_relay/stations', (_req: IncomingMessage, res: any) => {
+      const active: Array<{ stationId: string; listeners: number; trackTitle?: string; updatedAt: number }> = [];
+      for (const [stationId, peerSet] of stations.entries()) {
+        let djClient: RelayClient | null = null;
+        let listeners = 0;
+        for (const peerId of peerSet) {
+          const client = clientsByPeerId.get(peerId);
+          if (!client || !client.conn.isOpen) continue;
+          if (client.role === 'dj') djClient = client;
+          else listeners++;
+        }
+        if (djClient && djClient.isPublic) {
+          active.push({
+            stationId,
+            listeners,
+            trackTitle: djClient.trackTitle,
+            updatedAt: Date.now()
+          });
+        }
+      }
+      active.sort((a, b) => (b.listeners - a.listeners) || a.stationId.localeCompare(b.stationId));
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ stations: active }));
+    });
+
     middlewares.use('/__p2p_relay/status', (req: IncomingMessage, res: any) => {
       const url = new URL(req.url || '/', 'http://localhost');
       const station = (url.searchParams.get('station') || '').toLowerCase().trim();
