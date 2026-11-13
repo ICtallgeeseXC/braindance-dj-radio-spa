@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { Tween } from 'svelte/motion';
+  import { cubicOut } from 'svelte/easing';
   import { P2PMesh, type StationState, type PeerNodeInfo } from './lib/p2p-mesh';
   import { PlayerController } from './lib/player-controller';
   import { parseAudioFile } from './lib/audio-metadata';
@@ -81,6 +83,32 @@
     try {
       localStorage.setItem('p2p_station_code', stationCode.trim());
     } catch {}
+  });
+
+  // Progressive Phase Rail buffer tweens (smooth 0 -> 100% sweep even on instant loads)
+  const priBufferTween = new Tween(0, { duration: 650, easing: cubicOut });
+  const auxBufferTween = new Tween(0, { duration: 650, easing: cubicOut });
+  let lastPriTrackId = '';
+  let lastAuxTrackId = '';
+
+  $effect(() => {
+    const tId = currentTrack?.trackId || '';
+    const target = mode === 'dj' ? (currentTrack ? 100 : 0) : currentBufferProgress;
+    if (tId !== lastPriTrackId) {
+      lastPriTrackId = tId;
+      priBufferTween.set(0, { duration: 0 });
+    }
+    priBufferTween.set(target, { duration: target > 0 ? 650 : 180 });
+  });
+
+  $effect(() => {
+    const nId = nextTrack?.trackId || '';
+    const target = nextTrack ? nextBufferProgress : 0;
+    if (nId !== lastAuxTrackId) {
+      lastAuxTrackId = nId;
+      auxBufferTween.set(0, { duration: 0 });
+    }
+    auxBufferTween.set(target, { duration: target > 0 ? 650 : 180 });
   });
 
   // Mesh & Player Instances
@@ -1033,14 +1061,14 @@
                       <span class="phase-tag">RAIL 01</span>
                       <div
                         class="phase-rail-bar"
-                        class:charged={(mode === 'dj' ? 100 : currentBufferProgress) >= 100}
-                        class:empty={(mode === 'dj' ? 100 : currentBufferProgress) === 0}
+                        class:charged={Math.round(priBufferTween.current) >= 100}
+                        class:empty={Math.round(priBufferTween.current) === 0}
                       >
-                        <div class="phase-rail-fill" style="width: {mode === 'dj' ? 100 : currentBufferProgress}%"></div>
+                        <div class="phase-rail-fill" style="width: {priBufferTween.current}%"></div>
                         <div class="phase-rail-scanlines" aria-hidden="true"></div>
                         <div class="phase-rail-overlay">
                           <span class="phase-name">PRI_BUFFER // CURRENT</span>
-                          <span class="phase-pct">{mode === 'dj' ? '100% [HOST]' : `${currentBufferProgress}%`}</span>
+                          <span class="phase-pct">{mode === 'dj' ? `${Math.round(priBufferTween.current)}% [HOST]` : `${Math.round(priBufferTween.current)}%`}</span>
                         </div>
                       </div>
                     </div>
@@ -1049,14 +1077,14 @@
                       <span class="phase-tag">RAIL 02</span>
                       <div
                         class="phase-rail-bar"
-                        class:charged={Boolean(nextTrack) && nextBufferProgress >= 100}
-                        class:empty={!nextTrack || nextBufferProgress === 0}
+                        class:charged={Boolean(nextTrack) && Math.round(auxBufferTween.current) >= 100}
+                        class:empty={!nextTrack || Math.round(auxBufferTween.current) === 0}
                       >
-                        <div class="phase-rail-fill" style="width: {nextTrack ? nextBufferProgress : 0}%"></div>
+                        <div class="phase-rail-fill" style="width: {auxBufferTween.current}%"></div>
                         <div class="phase-rail-scanlines" aria-hidden="true"></div>
                         <div class="phase-rail-overlay">
                           <span class="phase-name">AUX_BUFFER // NEXT {nextTrack ? `[${nextTrack.title.slice(0, 14)}…]` : ''}</span>
-                          <span class="phase-pct">{nextTrack ? `${nextBufferProgress}%` : 'STANDBY'}</span>
+                          <span class="phase-pct">{nextTrack ? `${Math.round(auxBufferTween.current)}%` : 'STANDBY'}</span>
                         </div>
                       </div>
                     </div>
@@ -2282,7 +2310,6 @@
     inset: 0 auto 0 0;
     background: linear-gradient(90deg, rgba(28, 128, 80, 0.85), rgba(58, 198, 128, 0.92));
     box-shadow: 0 0 10px rgba(46, 204, 113, 0.45);
-    transition: width 0.22s ease;
   }
 
   .phase-rail-scanlines {
