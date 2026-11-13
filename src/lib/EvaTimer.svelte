@@ -7,6 +7,7 @@
     isPlaying = false,
     isAudioActuallyPlaying = false,
     mode = 'listener',
+    volume = 1,
     onSeek = (frac: number) => {},
     getAudioData = () => null,
     onVisModeChange = (_visMode: 'off' | 'lo' | 'hi' | '666') => {}
@@ -16,6 +17,7 @@
     isPlaying: boolean;
     isAudioActuallyPlaying: boolean;
     mode?: string;
+    volume?: number;
     onSeek?: (frac: number) => void;
     getAudioData?: () => any;
     onVisModeChange?: (visMode: 'off' | 'lo' | 'hi' | '666') => void;
@@ -333,7 +335,13 @@
     return `M14,${baseY} L${kneeX.toFixed(1)},${baseY} L${PSYCHO_CONVERGE_X},${PSYCHO_CONVERGE_Y}`;
   }
 
-  function buildPsychoRightPath(idx: number, energy: number, timeData: Uint8Array | null, nowSec: number): string {
+  function buildPsychoRightPath(
+    idx: number,
+    energy: number,
+    timeData: Uint8Array | null,
+    nowSec: number,
+    gain: number
+  ): string {
     const targetY = PSYCHO_BANDS[idx].baseY;
     const chaos = Math.max(0, Math.min(1, (energy - PSYCHO_THRESHOLD) / 0.34));
     const points = 28;
@@ -351,12 +359,13 @@
         waveSample = (timeData[sampleIdx] - 128) / 128;
       }
 
-      // Live audiograph displacement along the strand
-      const audioDisplaceY = waveSample * (8 + energy * 38) * Math.sin(p * Math.PI);
-      const harmonicRippleY = Math.sin(p * 10 - nowSec * (3.2 + idx * 0.25) + idx) * (2.5 + energy * 10);
+      // Live audiograph displacement scaled directly by user VOL // GAIN (0..1)
+      const audioDisplaceY = waveSample * (8 + energy * 38) * gain * Math.sin(p * Math.PI);
+      const harmonicRippleY =
+        Math.sin(p * 10 - nowSec * (3.2 + idx * 0.25) + idx) * (2.5 + energy * 10) * gain;
 
       // Artistic psychographic loop-backs & chaotic scrawls when energy crosses threshold
-      const loopAmp = chaos * p * (16 + energy * 34);
+      const loopAmp = chaos * p * (16 + energy * 34) * gain;
       const loopX = loopAmp * Math.sin(nowSec * (2.7 + idx * 0.35) + s * 1.65 + waveSample * 4.2);
       const loopY = loopAmp * Math.cos(nowSec * (3.3 + idx * 0.28) + s * 2.05 - waveSample * 4.8);
 
@@ -369,6 +378,7 @@
 
   function updatePsychograph(nowMs: number, audioData: any) {
     const nowSec = nowMs * 0.001;
+    const gain = Math.max(0, Math.min(1, volume));
     const sampleRate = audioData?.sampleRate || 44100;
     const freqData: Uint8Array | null = audioData?.freq || null;
     const timeData: Uint8Array | null = audioData?.time || null;
@@ -376,21 +386,21 @@
     let totalEnergy = 0;
     for (let i = 0; i < PSYCHO_BANDS.length; i++) {
       const band = PSYCHO_BANDS[i];
-      const rawEnergy = freqData ? getBandEnergy(freqData, band.minHz, band.maxHz, sampleRate) : 0;
+      const rawEnergy = freqData ? getBandEnergy(freqData, band.minHz, band.maxHz, sampleRate) * gain : 0;
       psychoSmoothedEnergy[i] = psychoSmoothedEnergy[i] * 0.35 + rawEnergy * 0.65;
       const e = psychoSmoothedEnergy[i];
       totalEnergy += e;
 
       const rightEl = psychoPaths[i];
       if (rightEl) {
-        rightEl.setAttribute('d', buildPsychoRightPath(i, e, timeData, nowSec));
-        rightEl.setAttribute('stroke-width', (1.25 + e * 1.35).toFixed(2));
-        rightEl.setAttribute('opacity', (0.68 + Math.min(0.32, e * 0.5)).toFixed(2));
+        rightEl.setAttribute('d', buildPsychoRightPath(i, e, timeData, nowSec, gain));
+        rightEl.setAttribute('stroke-width', (1.15 + e * 1.45).toFixed(2));
+        rightEl.setAttribute('opacity', (0.58 + Math.min(0.42, e * 0.6)).toFixed(2));
       }
 
       const leftEl = psychoLeftPaths[i];
       if (leftEl) {
-        leftEl.setAttribute('opacity', (0.62 + Math.min(0.38, e * 0.65)).toFixed(2));
+        leftEl.setAttribute('opacity', (0.55 + Math.min(0.45, e * 0.7)).toFixed(2));
       }
     }
 
@@ -398,7 +408,7 @@
       let peakAmp = 0;
       if (timeData && timeData.length > 0) {
         for (let k = 0; k < timeData.length; k += 4) {
-          const amp = Math.abs(timeData[k] - 128) / 128;
+          const amp = (Math.abs(timeData[k] - 128) / 128) * gain;
           if (amp > peakAmp) peakAmp = amp;
         }
       }
@@ -966,7 +976,7 @@
           />
           <path
             bind:this={psychoPaths[i]}
-            d={buildPsychoRightPath(i, 0.1, null, 0)}
+            d={buildPsychoRightPath(i, 0.1, null, 0, volume)}
             fill="none"
             stroke="#fff6aa"
             stroke-width="1.4"

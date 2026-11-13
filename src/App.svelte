@@ -2059,6 +2059,7 @@
                     {isPlaying}
                     {isAudioActuallyPlaying}
                     {mode}
+                    {volume}
                     onSeek={handleSeek}
                     getAudioData={() => player ? player.getAudioVisualData() : null}
                     onVisModeChange={(m) => (activeVisMode = m)}
