@@ -13,7 +13,9 @@
     duration = 0,
     bufferProgress = 100,
     stationCode = '',
-    mode = 'listener'
+    mode = 'listener',
+    isShuffled = false,
+    queueLength = 0
   }: {
     peers: PeerNodeInfo[];
     activeStream?: boolean;
@@ -26,6 +28,8 @@
     bufferProgress?: number;
     stationCode?: string;
     mode?: 'dj' | 'listener';
+    isShuffled?: boolean;
+    queueLength?: number;
   } = $props();
 
   interface CodeEntry {
@@ -149,18 +153,94 @@
       () => ({
         text: `deploy AT_FIELD_BARRIER;`,
         tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} shuffle_mode :: ${isShuffled ? 'RANDOMIZED' : 'LINEAR'} (${queueLength} TRKS);`,
+        tone: isShuffled ? 'hot' : 'dim'
+      }),
+      () => ({
+        text: `${addr} permute_queue(n=${queueLength}, ${isShuffled ? 'SHUFFLE' : 'SEQ'});`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} artist_vector("${artistTag}");`,
+        tone: trackArtist ? 'hot' : 'dim'
+      }),
+      () => ({
+        text: `${addr} id3_meta.bind("${artistTag}", "${titleTag.slice(0, 10)}");`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} dma_ring_push(CH_${unit.id}, 64KB);`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} fft_window(4096, HANNING);`,
+        tone: visMode === 'off' ? 'dim' : 'hot'
+      }),
+      () => ({
+        text: `${addr} p2p_tree.balance(peers=${peers.length});`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} phase_lock(PLL_SYNC, ${activeStream ? 'LOCKED' : 'HOLD'});`,
+        tone: activeStream ? 'pass' : 'dim'
+      }),
+      () => ({
+        text: `${addr} lcl_density(${(0.985 + Math.random() * 0.014).toFixed(4)});`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} packet_crc32(${randHex(4)}${randHex(4).slice(2)});`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} webrtc_ice.probe(NAT_BYPASS);`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} jitter_buf(${12 + Math.floor(Math.random() * 48)}ms);`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} clock_drift(${(Math.random() * 2.4 - 1.2).toFixed(2)}ms);`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} plug_depth(${(42 + Math.random() * 35).toFixed(1)}m);`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} a10_nerve_sync(${activeStream ? (96 + Math.random() * 3.9).toFixed(2) : '0.00'}%);`,
+        tone: activeStream ? 'pass' : 'dim'
+      }),
+      () => ({
+        text: `${addr} casper_heuristic(${isShuffled ? 'STOCHASTIC' : 'ORDERED'});`,
+        tone: 'dim'
+      }),
+      () => ({
+        text: `${addr} pribn0w_gate(${activeCount >= 2 ? 'OPEN' : 'SEALED'});`,
+        tone: activeCount >= 2 ? 'pass' : 'fail'
+      }),
+      () => ({
+        text: `${addr} bitrate_est(${activeStream ? 128 + Math.floor(Math.random() * 192) : 0}kbps);`,
+        tone: activeStream ? 'hot' : 'dim'
       })
     ];
 
-    let idx = Math.floor(Math.random() * generators.length);
-    if (generators.length > 1 && idx === lastGenIdx[unitIndex]) {
-      idx = (idx + 1 + Math.floor(Math.random() * (generators.length - 1))) % generators.length;
+    const recent = recentGens[unitIndex];
+    const candidates: number[] = [];
+    for (let i = 0; i < generators.length; i++) {
+      if (!recent.includes(i)) candidates.push(i);
     }
-    lastGenIdx[unitIndex] = idx;
+    const pool = candidates.length > 0 ? candidates : Array.from({ length: generators.length }, (_, i) => i);
+    const idx = pool[Math.floor(Math.random() * pool.length)];
+    recent.push(idx);
+    if (recent.length > 7) recent.shift();
     return generators[idx]();
   }
 
-  const lastGenIdx = [-1, -1, -1];
+  const recentGens: [number[], number[], number[]] = [[], [], []];
 
   function makeInitialBuffer(unitIndex: number): CodeEntry[] {
     return Array.from({ length: VISIBLE_LINES }, () => generateLiveLine(unitIndex));

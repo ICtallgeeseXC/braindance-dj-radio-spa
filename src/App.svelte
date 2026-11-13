@@ -2048,6 +2048,8 @@
           bufferProgress={mode === 'dj' ? 100 : currentBufferProgress}
           {stationCode}
           mode={mode === 'dj' ? 'dj' : 'listener'}
+          {isShuffled}
+          queueLength={playlist.length}
         />
 
         <!-- DJ Playlist Queue -->
