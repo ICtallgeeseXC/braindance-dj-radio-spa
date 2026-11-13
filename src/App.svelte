@@ -1100,6 +1100,42 @@
   }
 </script>
 
+{#snippet transcodePhaseRails()}
+  <div class="buffer-meters phase-rails transcode-rails">
+    <div class="phase-rail-spine" aria-hidden="true"></div>
+    <div class="phase-rail-row">
+      <span class="phase-tag">TRK {compressTrackIndex}/{compressTrackTotal}</span>
+      <div
+        class="phase-rail-bar"
+        class:charged={Math.round(transcodeTrackTween.current) >= 100}
+        class:empty={Math.round(transcodeTrackTween.current) === 0}
+      >
+        <div class="phase-rail-fill" style="width: {transcodeTrackTween.current}%"></div>
+        <div class="phase-rail-scanlines" aria-hidden="true"></div>
+        <div class="phase-rail-overlay">
+          <span class="phase-name">{autoCompressMp3 ? 'MP3_128K // ENCODE' : 'INGEST // PARSE'}</span>
+          <span class="phase-pct">{Math.round(transcodeTrackTween.current)}%</span>
+        </div>
+      </div>
+    </div>
+    <div class="phase-rail-row">
+      <span class="phase-tag">BATCH</span>
+      <div
+        class="phase-rail-bar"
+        class:charged={Math.round(transcodeBatchTween.current) >= 100}
+        class:empty={Math.round(transcodeBatchTween.current) === 0}
+      >
+        <div class="phase-rail-fill" style="width: {transcodeBatchTween.current}%"></div>
+        <div class="phase-rail-scanlines" aria-hidden="true"></div>
+        <div class="phase-rail-overlay">
+          <span class="phase-name">{compressFileName ? compressFileName.slice(0, 22) : 'QUEUE'}</span>
+          <span class="phase-pct">{Math.round(transcodeBatchTween.current)}%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+{/snippet}
+
 <main class="app-root">
   <!-- NERV Top Caution Stripe -->
   <div class="nerv-top-hazard" aria-hidden="true"></div>
@@ -1366,39 +1402,7 @@
                   <span class="dropzone-body">
                     {#if uploadProcessing}
                       <span class="dropzone-tag">PROCESSING // 解析中</span>
-                      <div class="buffer-meters phase-rails transcode-rails">
-                        <div class="phase-rail-spine" aria-hidden="true"></div>
-                        <div class="phase-rail-row">
-                          <span class="phase-tag">TRK {compressTrackIndex}/{compressTrackTotal}</span>
-                          <div
-                            class="phase-rail-bar"
-                            class:charged={Math.round(transcodeTrackTween.current) >= 100}
-                            class:empty={Math.round(transcodeTrackTween.current) === 0}
-                          >
-                            <div class="phase-rail-fill" style="width: {transcodeTrackTween.current}%"></div>
-                            <div class="phase-rail-scanlines" aria-hidden="true"></div>
-                            <div class="phase-rail-overlay">
-                              <span class="phase-name">{autoCompressMp3 ? 'MP3_128K // ENCODE' : 'INGEST // PARSE'}</span>
-                              <span class="phase-pct">{Math.round(transcodeTrackTween.current)}%</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="phase-rail-row">
-                          <span class="phase-tag">BATCH</span>
-                          <div
-                            class="phase-rail-bar"
-                            class:charged={Math.round(transcodeBatchTween.current) >= 100}
-                            class:empty={Math.round(transcodeBatchTween.current) === 0}
-                          >
-                            <div class="phase-rail-fill" style="width: {transcodeBatchTween.current}%"></div>
-                            <div class="phase-rail-scanlines" aria-hidden="true"></div>
-                            <div class="phase-rail-overlay">
-                              <span class="phase-name">{compressFileName ? compressFileName.slice(0, 22) : 'QUEUE'}</span>
-                              <span class="phase-pct">{Math.round(transcodeBatchTween.current)}%</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      {@render transcodePhaseRails()}
                     {:else if djFiles.length > 0}
                       <span class="dropzone-tag ready">SIGNAL READY // 準備完了</span>
                       <span class="dropzone-main">{djFiles.length} {djFiles.length === 1 ? 'TRACK' : 'TRACKS'} ARMED FOR BROADCAST</span>
@@ -1799,6 +1803,13 @@
                 <input type="file" multiple accept=".mp3,.flac,audio/*" style="display:none" disabled={addingTracks} onchange={handleAddTracksLive} />
               </label>
             </div>
+
+            {#if addingTracks}
+              <div class="queue-transcode-box">
+                <span class="dropzone-tag">INJECTING // 解析中</span>
+                {@render transcodePhaseRails()}
+              </div>
+            {/if}
 
             <div class="queue-list">
               {#each playlist as tId, index (tId)}
@@ -2942,6 +2953,18 @@
     width: 100%;
     margin-top: 4px;
     text-align: left;
+  }
+
+  .queue-transcode-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: rgba(2, 5, 10, 0.94);
+    border: 1px dashed rgba(255, 119, 0, 0.55);
+    border-left: 3px solid #ff7700;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
   }
 
   .dropzone-label.ready {
