@@ -1352,11 +1352,11 @@
         <!-- DJ Playlist Queue -->
         {#if mode === 'dj'}
           <div class="queue-card">
-            <div class="nerv-hazard-banner cyan"></div>
+            <div class="nerv-hazard-banner"></div>
             <div class="queue-header">
               <div class="queue-title-group">
-                <span class="tech-code">MAGI_QUEUE</span>
-                <h3>TRANSMISSION MANIFEST ({playlist.length})</h3>
+                <span class="tech-code">MAGI // QUEUE</span>
+                <h3>TRANSMISSION MANIFEST [{String(playlist.length).padStart(2, '0')}]</h3>
               </div>
               <label class="icon-btn add-songs-btn">
                 <span class="cmd-led" aria-hidden="true"></span>
@@ -1403,6 +1403,8 @@
                         <span class="q-pulse-dot"></span>
                         <span>ON AIR</span>
                       </span>
+                    {:else}
+                      <span class="q-standby">QUEUED</span>
                     {/if}
                     <div class="q-reorder-group" role="group" aria-label="Reorder track">
                       <button
@@ -2971,31 +2973,18 @@
 
   /* Queue Manifest */
   .queue-card {
-    background: #02040a;
+    background: #020408;
     background-image:
-      linear-gradient(rgba(0, 240, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 240, 255, 0.035) 1px, transparent 1px);
+      linear-gradient(rgba(255, 119, 0, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 119, 0, 0.03) 1px, transparent 1px);
     background-size: 16px 16px;
-    border: 1.5px solid rgba(0, 240, 255, 0.38);
-    box-shadow: 0 0 22px rgba(0, 240, 255, 0.16), inset 0 0 16px rgba(0, 240, 255, 0.05);
-    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
-    padding: 16px 18px 20px 18px;
+    border: 1px solid rgba(255, 119, 0, 0.42);
+    border-top: 2px solid #ff7700;
+    box-shadow: 0 0 18px rgba(0, 0, 0, 0.8), inset 0 0 14px rgba(255, 119, 0, 0.05);
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+    padding: 14px 18px 18px;
     position: relative;
     overflow: hidden;
-  }
-
-  .nerv-hazard-banner.cyan {
-    height: 3px;
-    width: 100%;
-    background: repeating-linear-gradient(
-      -45deg,
-      #00f0ff 0px,
-      #00f0ff 8px,
-      #040814 8px,
-      #040814 16px
-    );
-    margin-bottom: 12px;
-    box-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
   }
 
   .queue-header {
@@ -3005,8 +2994,8 @@
     flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(0, 240, 255, 0.25);
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 119, 0, 0.28);
   }
 
   .queue-title-group {
@@ -3017,25 +3006,24 @@
 
   .tech-code {
     background: rgba(255, 119, 0, 0.14);
-    color: #ff7700;
-    border: 1px solid #ff7700;
+    color: #ff9500;
+    border: 1px solid rgba(255, 119, 0, 0.65);
     padding: 2px 8px;
-    font-family: var(--font-display);
-    font-weight: 900;
-    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    font-weight: 800;
+    font-size: 0.68rem;
     letter-spacing: 0.12em;
     clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
-    text-shadow: 0 0 8px rgba(255, 119, 0, 0.7);
   }
 
   .queue-card h3 {
     margin: 0;
     font-family: var(--font-display);
-    font-size: 0.94rem;
+    font-size: 0.84rem;
     font-weight: 800;
-    color: #00f0ff;
-    letter-spacing: 0.1em;
-    text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+    color: #ff9500;
+    letter-spacing: 0.14em;
+    text-shadow: 0 0 8px rgba(255, 119, 0, 0.45);
   }
 
   .add-songs-btn {
@@ -3049,7 +3037,7 @@
   .queue-list {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 6px;
     max-height: 250px;
     overflow-y: auto;
     content-visibility: auto;
@@ -3062,13 +3050,12 @@
   }
 
   .queue-list::-webkit-scrollbar-track {
-    background: #020610;
-    border: 1px solid rgba(0, 240, 255, 0.15);
+    background: #020408;
+    border: 1px solid rgba(255, 119, 0, 0.18);
   }
 
   .queue-list::-webkit-scrollbar-thumb {
-    background: #00f0ff;
-    box-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+    background: #ff7700;
   }
 
   .queue-item {
@@ -3076,47 +3063,47 @@
     text-align: left;
     display: flex;
     align-items: center;
-    padding: 10px 14px;
-    background: rgba(3, 8, 18, 0.92);
-    border: 1px solid rgba(0, 240, 255, 0.2);
-    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    padding: 8px 12px;
+    background: rgba(4, 7, 13, 0.94);
+    border: 1px solid rgba(255, 119, 0, 0.24);
+    border-left: 3px solid rgba(255, 119, 0, 0.48);
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
     cursor: pointer;
-    gap: 12px;
+    gap: 11px;
     text-transform: none;
-    transition: all 0.15s ease-out;
+    transition: background 0.15s ease, border-color 0.15s ease;
   }
 
   .queue-item:hover {
     background: rgba(255, 119, 0, 0.08);
-    border-color: rgba(255, 119, 0, 0.65);
-    box-shadow: 0 0 12px rgba(255, 119, 0, 0.2);
+    border-color: rgba(255, 119, 0, 0.72);
   }
 
   .queue-item.active {
-    background: linear-gradient(90deg, rgba(255, 119, 0, 0.22) 0%, rgba(255, 119, 0, 0.05) 100%);
+    background: linear-gradient(90deg, rgba(255, 119, 0, 0.16) 0%, rgba(0, 255, 136, 0.05) 100%);
     border: 1.5px solid #ff7700;
-    box-shadow: 0 0 18px rgba(255, 119, 0, 0.35), inset 0 0 12px rgba(255, 119, 0, 0.15);
+    border-left: 4px solid #00ff88;
+    box-shadow: inset 0 0 12px rgba(255, 119, 0, 0.12);
   }
 
   .q-idx {
     font-family: var(--font-mono);
-    font-size: 0.85rem;
-    color: #00f0ff;
-    background: rgba(0, 240, 255, 0.08);
-    border: 1px solid rgba(0, 240, 255, 0.28);
+    font-size: 0.78rem;
+    color: #ff9500;
+    background: rgba(255, 119, 0, 0.08);
+    border: 1px solid rgba(255, 119, 0, 0.35);
     padding: 2px 7px;
     min-width: 28px;
     text-align: center;
-    border-radius: 1px;
-    font-weight: bold;
-    letter-spacing: 0.05em;
+    font-weight: 800;
+    letter-spacing: 0.06em;
   }
 
   .queue-item.active .q-idx {
-    color: #020101;
-    background: #ff7700;
-    border-color: #ff9500;
-    box-shadow: 0 0 8px rgba(255, 119, 0, 0.8);
+    color: #020408;
+    background: #00ff88;
+    border-color: #6effb8;
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.55);
     font-weight: 900;
   }
 
@@ -3128,10 +3115,10 @@
   }
 
   .q-title {
-    font-size: 0.94rem;
+    font-size: 0.92rem;
     font-family: var(--font-body);
     font-weight: 700;
-    color: #ffffff;
+    color: #f1f5f9;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3139,14 +3126,14 @@
   }
 
   .queue-item.active .q-title {
-    color: #fff4e0;
-    text-shadow: 0 0 4px rgba(255, 180, 50, 0.4);
+    color: #fff8ea;
+    text-shadow: 0 0 6px rgba(255, 185, 85, 0.45);
   }
 
   .q-artist {
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     font-family: var(--font-mono);
-    color: rgba(0, 240, 255, 0.7);
+    color: rgba(148, 163, 184, 0.8);
     margin-top: 1px;
   }
 
@@ -3154,49 +3141,60 @@
     color: #ffaa55;
   }
 
+  .q-standby {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: rgba(255, 149, 0, 0.65);
+    border: 1px solid rgba(255, 119, 0, 0.28);
+    background: rgba(255, 119, 0, 0.05);
+    padding: 2px 7px;
+    flex-shrink: 0;
+  }
+
   .q-playing {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.72rem;
-    background: #ff7700;
-    color: #020101;
-    padding: 3px 8px;
+    font-size: 0.68rem;
+    background: rgba(0, 255, 136, 0.14);
+    color: #00ff88;
+    border: 1px solid rgba(0, 255, 136, 0.65);
+    padding: 2px 8px;
     font-weight: 900;
-    font-family: var(--font-display);
-    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+    letter-spacing: 0.12em;
     flex-shrink: 0;
-    clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
-    box-shadow: 0 0 10px #ff7700;
+    text-shadow: 0 0 6px rgba(0, 255, 136, 0.45);
   }
 
   .q-pulse-dot {
     width: 6px;
     height: 6px;
-    background: #020101;
+    background: #00ff88;
     border-radius: 50%;
     animation: blink-dot 0.8s infinite alternate;
   }
 
   @keyframes blink-dot {
-    0% { opacity: 0.2; transform: scale(0.7); }
+    0% { opacity: 0.25; transform: scale(0.75); }
     100% { opacity: 1; transform: scale(1.1); }
   }
 
   .q-drag-handle {
     cursor: grab;
-    color: rgba(0, 240, 255, 0.4);
-    font-size: 1.05rem;
-    padding: 0 4px;
+    color: rgba(255, 119, 0, 0.42);
+    font-size: 1rem;
+    padding: 0 2px;
     display: inline-flex;
     align-items: center;
     user-select: none;
-    transition: color 0.15s ease, text-shadow 0.15s ease;
+    transition: color 0.15s ease;
   }
 
   .q-drag-handle:hover {
-    color: #00f0ff;
-    text-shadow: 0 0 6px #00f0ff;
+    color: #ff9500;
   }
 
   .queue-item:active .q-drag-handle {
@@ -3210,9 +3208,8 @@
   }
 
   .queue-item.drag-over {
-    border: 1.5px solid #00f0ff;
-    background: rgba(0, 240, 255, 0.14);
-    box-shadow: 0 0 16px rgba(0, 240, 255, 0.5), inset 0 0 12px rgba(0, 240, 255, 0.15);
+    border: 1.5px solid #00ff88;
+    background: rgba(0, 255, 136, 0.1);
   }
 
   .q-item-right {
@@ -3226,23 +3223,21 @@
   .q-reorder-group {
     display: inline-flex;
     align-items: center;
-    background: rgba(2, 6, 14, 0.95);
-    border: 1px solid rgba(0, 240, 255, 0.35);
-    clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+    background: rgba(2, 4, 9, 0.95);
+    border: 1px solid rgba(255, 119, 0, 0.35);
     padding: 2px 4px;
     gap: 2px;
     flex-shrink: 0;
   }
 
   .queue-item.active .q-reorder-group {
-    border-color: rgba(255, 119, 0, 0.5);
-    background: rgba(6, 2, 1, 0.92);
+    border-color: rgba(255, 119, 0, 0.55);
   }
 
   .q-nudge-btn {
     background: transparent;
     border: none;
-    color: #00d4ff;
+    color: #ff9500;
     font-size: 0.65rem;
     padding: 4px 6px;
     cursor: pointer;
@@ -3251,17 +3246,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.12s ease;
-  }
-
-  .queue-item.active .q-nudge-btn {
-    color: #ffaa55;
+    transition: background 0.12s ease, color 0.12s ease;
   }
 
   .q-nudge-btn:hover:not(:disabled) {
-    background: rgba(255, 119, 0, 0.3);
+    background: rgba(255, 119, 0, 0.25);
     color: #ffffff;
-    text-shadow: 0 0 6px #ff7700;
   }
 
   .q-nudge-btn:disabled {
