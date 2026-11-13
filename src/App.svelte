@@ -161,6 +161,8 @@
       return player ? player.handleIncomingChunk(trackId, chunkIndex, totalChunks, data) : false;
     };
 
+    mesh.onGetMissingChunks = () => (player ? player.getMissingChunksInfo() : null);
+
     const repairTokens = new Map<string, number>();
     let nextRepairToken = 0;
 

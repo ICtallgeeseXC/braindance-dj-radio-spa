@@ -60,6 +60,9 @@ export class P2PMesh {
 
   // Track which children / parent are using WebSocket Relay vs direct WebRTC
   private relayChildrenIds: Set<string> = new Set();
+  // Torrent-style swarm data channels (kept separate from pyramid childDataConns so live broadcasts don't push to swarm peers)
+  private swarmConns: Map<string, DataConnection> = new Map();
+  private lastSwarmPullAt: number = 0;
   private usingRelayForControl: boolean = false;
   private usingRelayForParentStream: boolean = false;
   private hasJoinedPyramid: boolean = false;
@@ -90,6 +93,7 @@ export class P2PMesh {
   public onTreeUpdated?: (peers: PeerNodeInfo[]) => void;
   public onStatusMessage?: (msg: string) => void;
   public onRequestTrackChunks?: (targetPeerId: string, trackId: string, missingIndexes?: number[]) => void;
+  public onGetMissingChunks?: () => { trackId: string; missingIndexes: number[] } | null;
 
   constructor() {
     this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
@@ -651,13 +655,18 @@ export class P2PMesh {
     const remoteId = conn.peer;
 
     conn.on('open', () => {
-      const isControl = conn.metadata?.role === 'control_channel';
+      const role = conn.metadata?.role;
+      const isControl = role === 'control_channel';
+      const isSwarm = role === 'swarm_channel';
 
       if (this.isDJ && isControl) {
         this.allListenerConns.set(remoteId, conn);
         const node = this.masterTreeMap.get(remoteId);
         if (node) node.transport = 'webrtc';
         this.log(`Listener ${remoteId} connected via direct WebRTC`);
+      } else if (isSwarm) {
+        this.swarmConns.set(remoteId, conn);
+        this.log(`Swarm channel connected with ${remoteId}`);
       } else {
         // Stream Data Channel (Audio chunks & link heartbeats)
         this.log(`Direct P2P stream connected with ${remoteId}`);
@@ -668,8 +677,14 @@ export class P2PMesh {
     });
 
     conn.on('data', (data: any) => {
-      if (this.isDJ && conn.metadata?.role === 'control_channel') {
+      const role = conn.metadata?.role;
+      if (this.isDJ && role === 'control_channel') {
         this.handleListenerRequestToDJ(remoteId, data);
+      } else if (role === 'swarm_channel') {
+        if (!this.swarmConns.has(remoteId)) {
+          this.swarmConns.set(remoteId, conn);
+        }
+        this.handleStreamData(data, remoteId);
       } else {
         // Ensure child is registered in childDataConns immediately even if 'open' event was delayed
         if (!this.childDataConns.has(remoteId)) {
@@ -706,6 +721,11 @@ export class P2PMesh {
         return;
       }
 
+      if (this.swarmConns.get(remoteId) === conn) {
+        this.sendQueues.delete(remoteId);
+        this.isDraining.delete(remoteId);
+        this.swarmConns.delete(remoteId);
+      }
       if (!this.childDataConns.has(remoteId) || this.childDataConns.get(remoteId) === conn) {
         this.sendQueues.delete(remoteId);
         this.isDraining.delete(remoteId);
@@ -725,9 +745,13 @@ export class P2PMesh {
     } else if (data.type === 'buffer_update') {
       const node = this.masterTreeMap.get(newcomerId);
       if (node) {
+        const prevPct = node.bufferPct ?? 0;
         node.lastHeartbeat = Date.now();
         if (typeof data.bufferPct === 'number') {
           node.bufferPct = data.bufferPct;
+          if (data.bufferPct >= 100 && prevPct < 100) {
+            this.broadcastTreeTopology();
+          }
         }
       }
     } else if (data.type === 'graceful_departure') {
@@ -1132,7 +1156,105 @@ export class P2PMesh {
           });
         }
       }
+
+      // Torrent-style Swarm Fallback:
+      // If buffer is incomplete and either initial chunks haven't arrived or mid-track delivery stalled,
+      // pull missing chunk ranges in parallel from buffered (100%) listener seeders.
+      if (!this.isDJ && this.currentParentId && this.currentBufferPct < 100) {
+        const now = Date.now();
+        const initialStall = this.chunksReceivedSinceParentConnect === 0 && this.parentConnectedTime > 0 && (now - this.parentConnectedTime > 3000);
+        const midTrackStall = this.lastChunkReceivedAt > 0 && (now - this.lastChunkReceivedAt > 3500);
+        if (initialStall || midTrackStall) {
+          this.triggerSwarmFallback();
+        }
+      }
     }, 2500);
+  }
+
+  private triggerSwarmFallback() {
+    const now = Date.now();
+    if (now - this.lastSwarmPullAt < 4000) return;
+
+    const missing = this.onGetMissingChunks?.();
+    if (!missing || missing.missingIndexes.length === 0) return;
+
+    const djPeerId = `station-${this.stationId}-dj`;
+    const seeders: string[] = [];
+    for (const node of this.masterTreeMap.values()) {
+      if (node.peerId !== this.peerId && node.role === 'listener' && (node.bufferPct ?? 0) >= 100) {
+        seeders.push(node.peerId);
+        if (seeders.length >= 3) break;
+      }
+    }
+
+    if (seeders.length === 0) {
+      if (this.currentParentId !== djPeerId || (this.lastChunkReceivedAt > 0 && now - this.lastChunkReceivedAt > 3500)) {
+        seeders.push(djPeerId);
+      } else {
+        return;
+      }
+    }
+
+    this.lastSwarmPullAt = now;
+    const batch = missing.missingIndexes.slice(0, 48);
+    for (const idx of batch) {
+      this.seenChunks.delete(`${missing.trackId}:${idx}`);
+    }
+
+    const buckets: number[][] = seeders.map(() => []);
+    for (let i = 0; i < batch.length; i++) {
+      buckets[i % seeders.length].push(batch[i]);
+    }
+
+    this.log(`🐝 Swarm fallback: pulling ${batch.length} missing chunks from ${seeders.length} seeder(s) (${seeders.join(', ')})`);
+
+    seeders.forEach((seederId, idx) => {
+      const slice = buckets[idx];
+      if (!slice || slice.length === 0) return;
+
+      const req = {
+        type: 'request_audio_chunks',
+        trackId: missing.trackId,
+        missingIndexes: slice,
+        from: this.peerId
+      };
+
+      const existing = this.swarmConns.get(seederId);
+      if (existing && existing.open) {
+        try {
+          existing.send(req);
+          return;
+        } catch {}
+      }
+
+      if (this.peer && !this.peer.destroyed && !existing) {
+        try {
+          const swarmConn = this.peer.connect(seederId, {
+            reliable: true,
+            metadata: { role: 'swarm_channel' }
+          });
+          this.swarmConns.set(seederId, swarmConn);
+
+          swarmConn.on('open', () => {
+            try { swarmConn.send(req); } catch {}
+          });
+          swarmConn.on('data', (data: any) => {
+            this.handleStreamData(data, seederId);
+          });
+          const cleanup = () => {
+            if (this.swarmConns.get(seederId) === swarmConn) {
+              this.swarmConns.delete(seederId);
+            }
+          };
+          swarmConn.on('close', cleanup);
+          swarmConn.on('error', cleanup);
+        } catch {}
+      }
+
+      if (this.relayConnected) {
+        this.sendViaRelay(seederId, req);
+      }
+    });
   }
 
   private checkMissedPings() {
@@ -1253,7 +1375,7 @@ export class P2PMesh {
         total += q[i].byteLength;
       }
     }
-    const conn = this.childDataConns.get(peerId);
+    const conn = this.childDataConns.get(peerId) || this.swarmConns.get(peerId);
     if (conn) {
       const dc = (conn as any).dataChannel as RTCDataChannel | undefined;
       if (dc) {
@@ -1270,6 +1392,7 @@ export class P2PMesh {
 
   public isPeerActive(peerId: string): boolean {
     if (this.childDataConns.get(peerId)?.open) return true;
+    if (this.swarmConns.get(peerId)?.open) return true;
     if (this.relayChildrenIds.has(peerId)) return true;
     return this.masterTreeMap.has(peerId);
   }
@@ -1321,7 +1444,7 @@ export class P2PMesh {
 
   public sendChunkToPeer(peerId: string, trackId: string, chunkIndex: number, totalChunks: number, rawData: ArrayBuffer) {
     const packet = this.encodeChunkPacket(trackId, chunkIndex, totalChunks, rawData);
-    const conn = this.childDataConns.get(peerId);
+    const conn = this.childDataConns.get(peerId) || this.swarmConns.get(peerId);
     if (conn && conn.open) {
       this.enqueuePacketToPeer(peerId, conn, packet);
     } else if (this.relayConnected) {
@@ -1547,8 +1670,10 @@ export class P2PMesh {
     this.parentDataConn?.close();
     for (const conn of this.allListenerConns.values()) conn.close();
     for (const conn of this.childDataConns.values()) conn.close();
+    for (const conn of this.swarmConns.values()) conn.close();
     this.allListenerConns.clear();
     this.childDataConns.clear();
+    this.swarmConns.clear();
     this.relayChildrenIds.clear();
     this.peer?.destroy();
   }

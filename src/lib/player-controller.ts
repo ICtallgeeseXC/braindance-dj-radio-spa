@@ -317,6 +317,18 @@ export class PlayerController {
     return this.audioElement.play();
   }
 
+  public getMissingChunksInfo(): { trackId: string; missingIndexes: number[] } | null {
+    if (this.currentTrackId && this.currentTrackBuffer && !this.currentTrackBuffer.isComplete) {
+      const missingIndexes = this.currentTrackBuffer.getMissingChunkIndexes();
+      if (missingIndexes.length > 0) return { trackId: this.currentTrackId, missingIndexes };
+    }
+    if (this.nextTrackId && this.nextTrackBuffer && !this.nextTrackBuffer.isComplete) {
+      const missingIndexes = this.nextTrackBuffer.getMissingChunkIndexes();
+      if (missingIndexes.length > 0) return { trackId: this.nextTrackId, missingIndexes };
+    }
+    return null;
+  }
+
   public registerManifest(manifest: TrackManifest) {
     this.trackManifests.set(manifest.trackId, manifest);
     if (this.currentTrackBuffer && this.currentTrackBuffer.manifest.trackId === manifest.trackId) {
