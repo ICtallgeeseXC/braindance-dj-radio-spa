@@ -94,6 +94,13 @@ export class PlayerController {
       this.errorRetryCount = 0;
     };
 
+    this.audioElement.onseeked = () => {
+      if (this.isPlaying && this.audioElement.paused) {
+        this.ensureAudioContextRunning();
+        this.audioElement.play().catch(() => {});
+      }
+    };
+
     this.audioElement.onpause = () => {
       if (this.onPlayStateChange) this.onPlayStateChange(false);
     };
@@ -223,13 +230,14 @@ export class PlayerController {
     }
   }
 
-  public ensureAudioContextRunning() {
+  public ensureAudioContextRunning(): Promise<void> {
     if (!this.audioContext) {
       this.setupAudioAnalyser();
     }
-    if (this.audioContext && this.audioContext.state === 'suspended') {
-      this.audioContext.resume().catch(() => {});
+    if (this.audioContext && this.audioContext.state !== 'running' && this.audioContext.state !== 'closed') {
+      return this.audioContext.resume().catch(() => {});
     }
+    return Promise.resolve();
   }
 
   public getAudioVisualData(): AudioVisualData | null {
@@ -250,7 +258,7 @@ export class PlayerController {
       return null;
     }
 
-    if (this.audioContext && this.audioContext.state === 'suspended' && !this.audioElement.paused) {
+    if (this.audioContext && this.audioContext.state !== 'running' && this.audioContext.state !== 'closed' && !this.audioElement.paused) {
       this.audioContext.resume().catch(() => {});
     }
 
@@ -281,7 +289,12 @@ export class PlayerController {
   }
 
   public async resumeSync() {
-    this.ensureAudioContextRunning();
+    // Synchronously unlock both AudioContext and HTMLAudioElement inside the user gesture (critical for iOS Safari)
+    const ctxPromise = this.ensureAudioContextRunning();
+    const hasValidSrc = Boolean(this.audioElement.src) && !this.audioElement.error && this.audioElement.networkState !== HTMLMediaElement.NETWORK_NO_SOURCE;
+    const gesturePlay = hasValidSrc ? this.audioElement.play().catch(() => {}) : Promise.resolve();
+
+    await Promise.all([ctxPromise, gesturePlay]);
 
     // If the audio element has an error or no valid source, recreate fresh blob URL from disk
     if (this.currentTrackId && (this.audioElement.error || !this.audioElement.src || this.audioElement.networkState === HTMLMediaElement.NETWORK_NO_SOURCE)) {
@@ -294,12 +307,12 @@ export class PlayerController {
       }
     }
 
+    this.syncPlaybackPosition(true);
     try {
       await this.audioElement.play();
     } catch (e) {
       console.warn('[Player] resumeSync play notice:', e);
     }
-    this.syncPlaybackPosition();
   }
 
   public loadDirectFile(file: File, manifest: TrackManifest) {
