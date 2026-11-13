@@ -988,25 +988,39 @@
                     getAudioData={() => player ? player.getAudioVisualData() : null}
                   />
 
-                  <!-- Pre-buffer status badges -->
-                  <div class="buffer-meters">
-                    <div class="buffer-meter">
-                      <div class="buffer-label">
-                        <span>PRI_BUFFER // CURRENT</span>
-                        <span class="pct">{mode === 'dj' ? '100% [HOST]' : `${currentBufferProgress}%`}</span>
-                      </div>
-                      <div class="mini-bar">
-                        <div class="mini-fill" style="width: {mode === 'dj' ? 100 : currentBufferProgress}%"></div>
+                  <!-- Pre-buffer status badges (NERV-UI Phase Rails) -->
+                  <div class="buffer-meters phase-rails">
+                    <div class="phase-rail-spine" aria-hidden="true"></div>
+
+                    <div class="phase-rail-row">
+                      <span class="phase-tag">RAIL 01</span>
+                      <div
+                        class="phase-rail-bar"
+                        class:charged={(mode === 'dj' ? 100 : currentBufferProgress) >= 100}
+                        class:empty={(mode === 'dj' ? 100 : currentBufferProgress) === 0}
+                      >
+                        <div class="phase-rail-fill" style="width: {mode === 'dj' ? 100 : currentBufferProgress}%"></div>
+                        <div class="phase-rail-scanlines" aria-hidden="true"></div>
+                        <div class="phase-rail-overlay">
+                          <span class="phase-name">PRI_BUFFER // CURRENT</span>
+                          <span class="phase-pct">{mode === 'dj' ? '100% [HOST]' : `${currentBufferProgress}%`}</span>
+                        </div>
                       </div>
                     </div>
 
-                    <div class="buffer-meter">
-                      <div class="buffer-label">
-                        <span>AUX_BUFFER // NEXT {nextTrack ? `[${nextTrack.title.slice(0, 12)}…]` : ''}</span>
-                        <span class="pct">{nextTrack ? `${nextBufferProgress}%` : 'STANDBY'}</span>
-                      </div>
-                      <div class="mini-bar">
-                        <div class="mini-fill next" style="width: {nextTrack ? nextBufferProgress : 0}%"></div>
+                    <div class="phase-rail-row">
+                      <span class="phase-tag">RAIL 02</span>
+                      <div
+                        class="phase-rail-bar"
+                        class:charged={Boolean(nextTrack) && nextBufferProgress >= 100}
+                        class:empty={!nextTrack || nextBufferProgress === 0}
+                      >
+                        <div class="phase-rail-fill" style="width: {nextTrack ? nextBufferProgress : 0}%"></div>
+                        <div class="phase-rail-scanlines" aria-hidden="true"></div>
+                        <div class="phase-rail-overlay">
+                          <span class="phase-name">AUX_BUFFER // NEXT {nextTrack ? `[${nextTrack.title.slice(0, 14)}…]` : ''}</span>
+                          <span class="phase-pct">{nextTrack ? `${nextBufferProgress}%` : 'STANDBY'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2140,46 +2154,123 @@
     border: 1px solid rgba(0, 255, 102, 0.35);
   }
 
-  .buffer-meters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 12px;
-    margin-top: 14px;
-    background: rgba(3, 6, 14, 0.85);
-    border: 1px solid rgba(0, 240, 255, 0.22);
-    padding: 10px 12px;
-  }
-
-  .buffer-label {
+  .buffer-meters.phase-rails {
+    position: relative;
     display: flex;
-    justify-content: space-between;
-    gap: 6px;
-    font-size: 0.7rem;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
+    background: rgba(3, 5, 11, 0.92);
+    border: 1px solid rgba(255, 119, 0, 0.28);
+    padding: 10px 12px;
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  }
+
+  .phase-rail-spine {
+    position: absolute;
+    left: calc(58px + (100% - 58px - 24px) / 2);
+    top: 10px;
+    bottom: 10px;
+    width: 4px;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, rgba(255, 119, 0, 0.25), #ff7700 50%, rgba(255, 119, 0, 0.25));
+    box-shadow: 0 0 8px rgba(255, 119, 0, 0.7);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .phase-rail-row {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .phase-tag {
+    width: 48px;
+    flex-shrink: 0;
     font-family: var(--font-mono);
-    color: var(--text-muted);
-    margin-bottom: 5px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #ff8c2a;
+    text-shadow: 0 0 6px rgba(255, 119, 0, 0.65);
   }
 
-  .buffer-label .pct {
-    color: var(--neon-cyan);
-    font-weight: bold;
-  }
-
-  .mini-bar {
-    height: 5px;
-    background: #02040a;
-    border: 1px solid rgba(0, 240, 255, 0.22);
+  .phase-rail-bar {
+    position: relative;
+    flex: 1;
+    height: 22px;
+    background: rgba(88, 10, 16, 0.45);
+    border: 1px solid rgba(180, 28, 38, 0.65);
+    border-radius: 3px;
     overflow: hidden;
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.85);
   }
 
-  .mini-fill {
+  .phase-rail-bar.charged {
+    border-color: rgba(56, 214, 130, 0.7);
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.7), 0 0 8px rgba(46, 204, 113, 0.22);
+  }
+
+  .phase-rail-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: linear-gradient(90deg, rgba(28, 128, 80, 0.85), rgba(58, 198, 128, 0.92));
+    box-shadow: 0 0 10px rgba(46, 204, 113, 0.45);
+    transition: width 0.22s ease;
+  }
+
+  .phase-rail-scanlines {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.42) 0px,
+      rgba(0, 0, 0, 0.42) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+  }
+
+  .phase-rail-overlay {
+    position: relative;
+    z-index: 2;
     height: 100%;
-    background: var(--neon-cyan);
-    transition: width 0.2s;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
   }
 
-  .mini-fill.next {
-    background: var(--neon-green);
+  .phase-name {
+    color: #e8fff4;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .phase-pct {
+    color: #a6ffd2;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .phase-rail-bar.empty .phase-name {
+    color: rgba(255, 160, 165, 0.82);
+  }
+
+  .phase-rail-bar.empty .phase-pct {
+    color: #ff6b78;
   }
 
   .deck-controls {
