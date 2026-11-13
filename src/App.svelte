@@ -2202,11 +2202,11 @@
   }
 
   .station-title {
-    font-weight: 700;
-    font-family: "Times New Roman", "Noto Serif JP", Georgia, serif;
-    font-size: 1.08rem;
+    font-weight: 800;
+    font-family: var(--font-display);
+    font-size: 0.98rem;
     color: #fff8ea;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.12em;
     text-shadow:
       0 0 6px rgba(255, 240, 200, 0.72),
       0 0 16px rgba(255, 185, 85, 0.45),
