@@ -434,12 +434,7 @@
         }
       }
 
-      // 4. Update Midline Telemetry "X: ..." values & Dynamic Color (only when changed)
-      const exactMidIndex = (HISTORY_LEN - 1) * (116 / 233);
-      const i0 = Math.floor(exactMidIndex);
-      const i1 = Math.min(HISTORY_LEN - 1, i0 + 1);
-      const frac = exactMidIndex - i0;
-
+      // 4. Update Top-Point Telemetry "X: ..." values & Dynamic Color (only when changed)
       for (let i = 0; i < CHANNELS.length; i++) {
         const textEl = telemetryTexts[i];
         const groupEl = chanGroups[i];
@@ -456,10 +451,9 @@
           continue;
         }
 
-        const buf = historyBuffers[i];
-        const midOffset = buf[i0] * (1 - frac) + buf[i1] * frac;
-        const clampedMid = Math.max(-24, Math.min(24, midOffset));
-        const xVal = (clampedMid / 24) * 9.99;
+        const topOffset = historyBuffers[i][0];
+        const clampedTop = Math.max(-24, Math.min(24, topOffset));
+        const xVal = (clampedTop / 24) * 9.99;
         const isBlue = xVal > 0;
 
         if (groupEl && lastIsBlue[i] !== isBlue) {
@@ -469,9 +463,9 @@
 
         if (textEl) {
           let nextStr: string;
-          if (clampedMid <= -23.95) {
+          if (clampedTop <= -23.95) {
             nextStr = 'X: -9.99';
-          } else if (clampedMid >= 23.95) {
+          } else if (clampedTop >= 23.95) {
             nextStr = 'X: +9.99';
           } else if (xVal > 0) {
             nextStr = `X: +${xVal.toFixed(2)}`;
