@@ -1021,30 +1021,41 @@
             <div class="transport-group">
               {#if mode === 'dj'}
                 <button type="button" class="icon-btn transport-btn" onclick={toggleShuffle} class:active={isShuffled} title="Shuffle Queue">
-                  <span class="btn-glyph">⤮</span>
+                  <span class="cmd-led" aria-hidden="true"></span>
+                  <span class="cmd-prefix">CMD //</span>
                   <span>{isShuffled ? 'SHUFFLE: ON' : 'SHUFFLE'}</span>
+                  <span class="btn-glyph">⤮</span>
                 </button>
-                <button type="button" class="main-play-btn" onclick={togglePlayPause}>
+                <button type="button" class="main-play-btn" class:is-live={isPlaying} onclick={togglePlayPause}>
+                  <span class="cmd-led" aria-hidden="true"></span>
+                  <span class="cmd-prefix">TX //</span>
                   <span class="play-icon">{isPlaying ? '❚❚' : '▶'}</span>
                   <span>{isPlaying ? 'PAUSE TX' : 'TRANSMIT'}</span>
                 </button>
                 <button type="button" class="icon-btn transport-btn" onclick={skipNext} title="Next Track">
+                  <span class="cmd-led" aria-hidden="true"></span>
+                  <span class="cmd-prefix">CMD //</span>
                   <span>SKIP TRACK</span>
                   <span class="btn-glyph">⏭</span>
                 </button>
               {:else}
                 {#if isAudioActuallyPlaying}
                   <button type="button" class="main-play-btn playing" onclick={() => player?.pause()}>
+                    <span class="cmd-led" aria-hidden="true"></span>
+                    <span class="cmd-prefix">RX //</span>
                     <span class="play-icon">❚❚</span>
                     <span>PAUSE STREAM</span>
                   </button>
                 {:else if currentBufferProgress < 100}
                   <button type="button" class="main-play-btn buffering" disabled>
                     <span class="buffering-spinner"></span>
+                    <span class="cmd-prefix">RX //</span>
                     <span>{sourceMounted ? 'SYNCING' : 'BUFFERING'} ({currentBufferProgress}%)...</span>
                   </button>
                 {:else}
                   <button type="button" class="main-play-btn pulse" onclick={() => player?.resumeSync()}>
+                    <span class="cmd-led" aria-hidden="true"></span>
+                    <span class="cmd-prefix">RX //</span>
                     <span class="play-icon">⚡</span>
                     <span>ENGAGE AUDIO LINK</span>
                   </button>
@@ -2213,45 +2224,72 @@
     gap: 12px;
   }
 
+  .cmd-led {
+    width: 5px;
+    height: 13px;
+    background: #00f0ff;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.75);
+    flex-shrink: 0;
+  }
+
+  .cmd-prefix {
+    color: rgba(255, 119, 0, 0.62);
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
   .main-play-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    background: linear-gradient(180deg, #ff8500 0%, #d65500 100%);
-    color: #040201;
+    background: rgba(3, 7, 16, 0.96);
+    color: #ff9500;
     font-family: var(--font-display);
-    font-weight: 900;
-    font-size: 0.88rem;
-    padding: 10px 22px;
+    font-weight: 800;
+    font-size: 0.82rem;
+    padding: 8px 18px 8px 12px;
     letter-spacing: 0.12em;
-    border: none;
+    border: 1px solid rgba(255, 119, 0, 0.75);
     cursor: pointer;
-    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
-    box-shadow: 0 0 18px rgba(255, 123, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.45);
-    transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+    clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 9px 100%, 0 calc(100% - 9px));
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.85), 0 0 12px rgba(255, 119, 0, 0.22);
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    user-select: none;
+  }
+
+  .main-play-btn .cmd-led {
+    background: #ff7700;
+    box-shadow: 0 0 7px rgba(255, 119, 0, 0.85);
+  }
+
+  .main-play-btn.is-live {
+    background: rgba(255, 119, 0, 0.14);
+    border-color: #ff7700;
+    color: #ffaa33;
   }
 
   .main-play-btn:hover {
-    background: linear-gradient(180deg, #ffa000 0%, #e66000 100%);
-    box-shadow: 0 0 24px rgba(255, 140, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.6);
-    transform: translateY(-1px);
+    background: rgba(255, 119, 0, 0.22);
+    border-color: #ffaa33;
+    color: #ffffff;
   }
 
   .main-play-btn:active {
     transform: translateY(1px);
-    box-shadow: 0 0 10px rgba(255, 123, 0, 0.5);
   }
 
   .main-play-btn .play-icon {
-    font-size: 0.95rem;
+    font-size: 0.88rem;
   }
 
   .main-play-btn.buffering {
-    background: #080f1e;
+    background: rgba(8, 15, 30, 0.95);
     color: var(--neon-yellow);
-    border: 1px solid rgba(255, 208, 0, 0.5);
-    box-shadow: 0 0 12px rgba(255, 208, 0, 0.25);
+    border: 1px solid rgba(255, 208, 0, 0.55);
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.85);
     cursor: wait;
   }
 
@@ -2269,57 +2307,74 @@
   }
 
   .main-play-btn.playing {
-    background: linear-gradient(180deg, #00f0ff 0%, #0088cc 100%);
-    color: #02060f;
-    box-shadow: 0 0 18px rgba(0, 240, 255, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.45);
+    background: rgba(0, 240, 255, 0.12);
+    border-color: rgba(0, 240, 255, 0.75);
+    color: #00f0ff;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.85), 0 0 12px rgba(0, 240, 255, 0.22);
+  }
+
+  .main-play-btn.playing .cmd-led {
+    background: #00f0ff;
+    box-shadow: 0 0 7px rgba(0, 240, 255, 0.85);
   }
 
   .main-play-btn.playing:hover {
-    background: linear-gradient(180deg, #33f4ff 0%, #00a2f5 100%);
-    box-shadow: 0 0 24px rgba(0, 240, 255, 0.85);
+    background: rgba(0, 240, 255, 0.22);
+    border-color: #00f0ff;
+    color: #ffffff;
   }
 
   .main-play-btn.pulse {
-    background: linear-gradient(180deg, #ff8500 0%, #d65500 100%);
-    color: #040201;
-    animation: pulse-engage 1.2s infinite alternate ease-in-out;
+    background: rgba(255, 42, 77, 0.14);
+    border-color: #ff2a4d;
+    color: #ff5c77;
   }
 
-  @keyframes pulse-engage {
-    0% { box-shadow: 0 0 12px rgba(255, 123, 0, 0.5); }
-    100% { box-shadow: 0 0 24px rgba(255, 140, 0, 0.95); }
+  .main-play-btn.pulse .cmd-led {
+    background: #ff2a4d;
+    box-shadow: 0 0 7px rgba(255, 42, 77, 0.9);
+    animation: pulse-led 0.9s infinite alternate ease-in-out;
+  }
+
+  @keyframes pulse-led {
+    0% { opacity: 0.45; }
+    100% { opacity: 1; }
   }
 
   .icon-btn {
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    background: linear-gradient(180deg, rgba(6, 14, 28, 0.95) 0%, rgba(2, 6, 14, 0.98) 100%);
-    border: 1px solid rgba(0, 240, 255, 0.38);
-    color: #a4e6f4;
-    padding: 9px 15px;
+    background: rgba(3, 7, 16, 0.95);
+    border: 1px solid rgba(0, 240, 255, 0.42);
+    color: #8ee8ff;
+    padding: 8px 14px 8px 10px;
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 0.76rem;
+    font-size: 0.74rem;
     letter-spacing: 0.08em;
-    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.85);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    user-select: none;
   }
 
   .icon-btn:hover {
     border-color: #00f0ff;
     color: #ffffff;
-    box-shadow: 0 0 14px rgba(0, 240, 255, 0.45);
-    background: linear-gradient(180deg, rgba(10, 24, 46, 0.95) 0%, rgba(4, 10, 22, 0.98) 100%);
+    background: rgba(0, 240, 255, 0.12);
   }
 
   .icon-btn.active {
-    background: rgba(255, 119, 0, 0.22);
-    color: #ff9500;
+    background: rgba(255, 119, 0, 0.16);
+    color: #ffaa33;
     border-color: #ff7700;
-    box-shadow: 0 0 14px rgba(255, 119, 0, 0.45);
-    text-shadow: 0 0 6px rgba(255, 119, 0, 0.6);
+  }
+
+  .icon-btn.active .cmd-led {
+    background: #ff7700;
+    box-shadow: 0 0 7px rgba(255, 119, 0, 0.85);
   }
 
   .btn-glyph {
