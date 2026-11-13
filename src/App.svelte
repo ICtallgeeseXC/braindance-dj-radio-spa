@@ -463,8 +463,19 @@
   const isBufferView = $derived((mode === 'listener' && currentBufferProgress < 100) || showBufferAnalysis);
   let currentTime = $state<number>(0);
   let duration = $state<number>(0);
+  function loadSavedVolume(): number {
+    try {
+      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('p2p_vol_gain') : null;
+      if (raw !== null) {
+        const parsed = parseFloat(raw);
+        if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
+      }
+    } catch {}
+    return 0.8;
+  }
+
   let isPlaying = $state<boolean>(false);
-  let volume = $state<number>(0.8);
+  let volume = $state<number>(loadSavedVolume());
   let stationStartTime = $state<number>(0);
 
   // Unthrottled macrotask scheduler (bypasses Android background tab timer throttling)
@@ -501,6 +512,7 @@
     mesh = new P2PMesh();
     myPeerId = mesh.peerId;
     player = new PlayerController();
+    player.setVolume(volume);
 
     // Register Player listeners
     let lastBufferUiUpdate = 0;
@@ -2161,7 +2173,13 @@
                   step="0.05"
                   aria-label="Audio Gain Volume"
                   bind:value={volume}
-                  oninput={(e) => player?.setVolume(parseFloat((e.target as HTMLInputElement).value))}
+                  oninput={(e) => {
+                    const nextVol = parseFloat((e.target as HTMLInputElement).value);
+                    player?.setVolume(nextVol);
+                    try {
+                      localStorage.setItem('p2p_vol_gain', String(nextVol));
+                    } catch {}
+                  }}
                 />
               </div>
               <span class="vol-val">{Math.round(volume * 100)}%</span>
