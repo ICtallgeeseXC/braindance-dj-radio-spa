@@ -233,10 +233,21 @@
       }
     };
 
-    // Check URL hash - populate stationCode
+    // Check URL hash - populate stationCode and auto-tune if station is live
     const hash = window.location.hash.replace('#', '').trim();
     if (hash) {
       stationCode = hash;
+      try {
+        const res = await fetch(`/__p2p_relay/status?station=${encodeURIComponent(hash.toLowerCase())}`);
+        if (res.ok) {
+          const status = await res.json();
+          if (status?.live && mode === 'select') {
+            joinAsListener();
+          }
+        }
+      } catch {
+        // Ignore if status endpoint is unavailable (e.g. static-only host)
+      }
     }
 
     // Capture PWA install prompt

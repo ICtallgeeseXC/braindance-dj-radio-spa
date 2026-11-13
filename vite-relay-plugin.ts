@@ -309,12 +309,34 @@ export function p2pRelayPlugin(): Plugin {
     });
   }
 
+  function setupStatusMiddleware(middlewares: any) {
+    middlewares.use('/__p2p_relay/status', (req: IncomingMessage, res: any) => {
+      const url = new URL(req.url || '/', 'http://localhost');
+      const station = (url.searchParams.get('station') || '').toLowerCase().trim();
+      let live = false;
+      let listeners = 0;
+      const peerSet = station ? stations.get(station) : undefined;
+      if (peerSet) {
+        for (const peerId of peerSet) {
+          const client = clientsByPeerId.get(peerId);
+          if (!client || !client.conn.isOpen) continue;
+          if (client.role === 'dj') live = true;
+          else listeners++;
+        }
+      }
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ live, stationId: station, listeners }));
+    });
+  }
+
   return {
     name: 'vite-plugin-p2p-relay',
     configureServer(server) {
+      setupStatusMiddleware(server.middlewares);
       setupWebSocketServer(server.httpServer);
     },
     configurePreviewServer(server) {
+      setupStatusMiddleware(server.middlewares);
       setupWebSocketServer(server.httpServer);
     }
   };

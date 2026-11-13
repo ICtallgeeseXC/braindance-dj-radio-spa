@@ -15,6 +15,20 @@ const textDecoder = new TextDecoder();
 
 export class P2PRelayDO extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === '/__p2p_relay/status' && request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
+      const station = (url.searchParams.get('station') || '').toLowerCase().trim();
+      let live = false;
+      let listeners = 0;
+      for (const ws of this.ctx.getWebSockets()) {
+        const meta = ws.deserializeAttachment() as PeerAttachment | null;
+        if (!meta || (station && meta.stationId !== station)) continue;
+        if (meta.role === 'dj') live = true;
+        else listeners++;
+      }
+      return Response.json({ live, stationId: station, listeners });
+    }
+
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected WebSocket upgrade', { status: 426 });
     }
