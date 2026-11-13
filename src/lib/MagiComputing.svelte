@@ -263,10 +263,18 @@
     }
   }
 
+  const MIN_UNIT_INTERVAL_MS = 40;
+  const MAX_UNIT_INTERVAL_MS = 1100;
+
   function nextUnitDelay(streaming: boolean): number {
-    return streaming
-      ? 320 + Math.floor(Math.random() * 560)
-      : 680 + Math.floor(Math.random() * 780);
+    const min = streaming ? MIN_UNIT_INTERVAL_MS : 450;
+    return min + Math.floor(Math.random() * (MAX_UNIT_INTERVAL_MS - min + 1));
+  }
+
+  function delayToProgress(delayMs: number): number {
+    const clamped = Math.min(MAX_UNIT_INTERVAL_MS, Math.max(MIN_UNIT_INTERVAL_MS, delayMs));
+    const ratio = (clamped - MIN_UNIT_INTERVAL_MS) / (MAX_UNIT_INTERVAL_MS - MIN_UNIT_INTERVAL_MS);
+    return Math.round(98 - ratio * 94);
   }
 
   $effect(() => {
@@ -276,6 +284,7 @@
 
     const scheduleUnit = (unitIndex: number) => {
       if (cancelled) return;
+      const delayMs = nextUnitDelay(streaming);
       unitTimers[unitIndex] = setTimeout(() => {
         if (cancelled) return;
         const nextBuffers: [CodeEntry[], CodeEntry[], CodeEntry[]] = [
@@ -291,13 +300,11 @@
           unitProgress[1],
           unitProgress[2]
         ];
-        nextProgress[unitIndex] = streaming
-          ? 64 + Math.floor(Math.random() * 36)
-          : 24 + Math.floor(Math.random() * 34);
+        nextProgress[unitIndex] = delayToProgress(delayMs);
         unitProgress = nextProgress;
 
         scheduleUnit(unitIndex);
-      }, nextUnitDelay(streaming));
+      }, delayMs);
     };
 
     for (let i = 0; i < UNITS.length; i++) {
@@ -575,7 +582,7 @@
     height: 100%;
     background: #00f0ff;
     box-shadow: 0 0 6px rgba(0, 240, 255, 0.75);
-    transition: width 0.35s ease;
+    transition: width 0.14s ease-out;
   }
 
   .magi-col-foot {
