@@ -2067,36 +2067,47 @@
 
                   <!-- Pre-buffer status badges (NERV-UI Phase Rails) -->
                   <div class="buffer-meters phase-rails">
-                    <div class="phase-rail-spine" aria-hidden="true"></div>
-
-                    <div class="phase-rail-row">
-                      <span class="phase-tag">RAIL 01</span>
-                      <div
-                        class="phase-rail-bar"
-                        class:charged={Math.round(priBufferTween.current) >= 100}
-                        class:empty={Math.round(priBufferTween.current) === 0}
-                      >
-                        <div class="phase-rail-fill" style="width: {priBufferTween.current}%"></div>
-                        <div class="phase-rail-scanlines" aria-hidden="true"></div>
-                        <div class="phase-rail-overlay">
-                          <span class="phase-name">PRI_BUFFER // CURRENT</span>
-                          <span class="phase-pct">{mode === 'dj' ? `${Math.round(priBufferTween.current)}% [HOST]` : `${Math.round(priBufferTween.current)}%`}</span>
-                        </div>
-                      </div>
+                    <div class="phase-rails-header">
+                      <span class="phase-rails-title">BUFFER STATUS</span>
+                      <span class="phase-rails-sub">PRI / AUX // PRE-CACHE</span>
                     </div>
 
-                    <div class="phase-rail-row">
-                      <span class="phase-tag">RAIL 02</span>
-                      <div
-                        class="phase-rail-bar"
-                        class:charged={Boolean(nextTrack) && Math.round(auxBufferTween.current) >= 100}
-                        class:empty={!nextTrack || Math.round(auxBufferTween.current) === 0}
-                      >
-                        <div class="phase-rail-fill" style="width: {auxBufferTween.current}%"></div>
-                        <div class="phase-rail-scanlines" aria-hidden="true"></div>
-                        <div class="phase-rail-overlay">
-                          <span class="phase-name">AUX_BUFFER // NEXT {nextTrack ? `[${nextTrack.title.slice(0, 14)}…]` : ''}</span>
-                          <span class="phase-pct">{nextTrack ? `${Math.round(auxBufferTween.current)}%` : 'STANDBY'}</span>
+                    <div class="phase-rails-rows">
+                      <div class="phase-rail-spine" aria-hidden="true"></div>
+
+                      <div class="phase-rail-row">
+                        <span class="phase-tag">PRI</span>
+                        <div
+                          class="phase-rail-bar"
+                          class:charged={Math.round(priBufferTween.current) >= 100}
+                          class:empty={Math.round(priBufferTween.current) === 0}
+                        >
+                          <div class="phase-rail-fill" style="width: {priBufferTween.current}%"></div>
+                          <div class="phase-rail-scanlines" aria-hidden="true"></div>
+                          <div class="phase-rail-overlay">
+                            <span class="phase-name">
+                              CURRENT{currentTrack ? ` // ${currentTrack.title}` : ''}
+                            </span>
+                            <span class="phase-pct">{mode === 'dj' ? `${Math.round(priBufferTween.current)}% [HOST]` : `${Math.round(priBufferTween.current)}%`}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="phase-rail-row">
+                        <span class="phase-tag">AUX</span>
+                        <div
+                          class="phase-rail-bar"
+                          class:charged={Boolean(nextTrack) && Math.round(auxBufferTween.current) >= 100}
+                          class:empty={!nextTrack || Math.round(auxBufferTween.current) === 0}
+                        >
+                          <div class="phase-rail-fill" style="width: {auxBufferTween.current}%"></div>
+                          <div class="phase-rail-scanlines" aria-hidden="true"></div>
+                          <div class="phase-rail-overlay">
+                            <span class="phase-name">
+                              NEXT{nextTrack ? ` // ${nextTrack.title}` : ''}
+                            </span>
+                            <span class="phase-pct">{nextTrack ? `${Math.round(auxBufferTween.current)}%` : 'STANDBY'}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -4131,6 +4142,35 @@
     clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
   }
 
+  .phase-rails-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 119, 0, 0.22);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+  }
+
+  .phase-rails-title {
+    color: #ff9500;
+    font-weight: 800;
+    text-shadow: 0 0 6px rgba(255, 119, 0, 0.45);
+  }
+
+  .phase-rails-sub {
+    color: rgba(255, 140, 42, 0.68);
+  }
+
+  .phase-rails-rows {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
   .phase-rail-spine {
     position: absolute;
     left: calc(58px + (100% - 58px - 24px) / 2);
@@ -4142,6 +4182,12 @@
     box-shadow: 0 0 8px rgba(255, 119, 0, 0.7);
     pointer-events: none;
     z-index: 0;
+  }
+
+  .phase-rails-rows .phase-rail-spine {
+    left: calc(58px + (100% - 58px) / 2);
+    top: 0;
+    bottom: 0;
   }
 
   .phase-rail-row {
