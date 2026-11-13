@@ -961,7 +961,7 @@
       style="transform: scaleX({Math.max(0, Math.min(1, 1 - progressPct))})"
       aria-hidden="true"
     ></div>
-    <div class="eva-scrubber-ticks" aria-hidden="true"></div>
+    <div class="eva-scrubber-crt" aria-hidden="true"></div>
     <div
       class="eva-scrubber-head"
       style="left: {Math.max(0, Math.min(100, progressPct * 100))}%"
@@ -1277,15 +1277,18 @@
     transition: stroke 0.08s ease;
   }
 
-  /* Scrubber Track (Fixed-Spectrum Red -> Orange -> Light Blue Envelope) */
+  /* Scrubber Track (Thicker Fixed-Spectrum CRT Phosphor Envelope) */
   .eva-scrubber-track {
     width: 100%;
-    height: 8px;
-    background: #0d0402;
-    border: 1px solid rgba(255, 119, 0, 0.45);
+    height: 14px;
+    background: #080202;
+    border: 1px solid rgba(255, 119, 0, 0.55);
+    box-shadow:
+      inset 0 0 8px rgba(0, 0, 0, 0.85),
+      0 0 10px rgba(255, 119, 0, 0.22);
     position: relative;
     cursor: pointer;
-    margin-top: 6px;
+    margin-top: 8px;
     overflow: hidden;
   }
 
@@ -1297,28 +1300,37 @@
     position: absolute;
     inset: 0;
     background: linear-gradient(90deg, #ff1e38 0%, #ff7700 35%, #ffaa00 58%, #38bdf8 82%, #7dd3fc 100%);
+    filter: saturate(1.15);
     pointer-events: none;
   }
 
   .eva-scrubber-mask {
     position: absolute;
     inset: 0;
-    background: rgba(5, 2, 2, 0.84);
+    background: rgba(4, 2, 2, 0.86);
     transform-origin: right center;
     will-change: transform;
     pointer-events: none;
   }
 
-  .eva-scrubber-ticks {
+  .eva-scrubber-crt {
     position: absolute;
     inset: 0;
-    background: repeating-linear-gradient(
-      90deg,
-      transparent 0px,
-      transparent 28px,
-      rgba(0, 0, 0, 0.35) 28px,
-      rgba(0, 0, 0, 0.35) 29px
-    );
+    background:
+      repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.46) 0px,
+        rgba(0, 0, 0, 0.46) 1px,
+        transparent 1px,
+        transparent 3px
+      ),
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.18) 0%,
+        transparent 35%,
+        rgba(0, 0, 0, 0.42) 100%
+      );
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.75);
     pointer-events: none;
   }
 
@@ -1328,7 +1340,7 @@
     bottom: 0;
     width: 2px;
     background: #ffffff;
-    box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.95), 0 0 14px rgba(0, 212, 255, 0.7);
     transform: translateX(-50%);
     pointer-events: none;
   }
