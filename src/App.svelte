@@ -57,6 +57,33 @@
     message: ''
   });
 
+  let abortArmed = $state(false);
+
+  function triggerAbortSequence() {
+    abortArmed = true;
+    systemDialog = {
+      open: true,
+      variant: 'critical',
+      title: 'SELF-DESTRUCT // ABORT LINK',
+      message:
+        mode === 'dj'
+          ? 'Terminating this link will shut down the DJ broadcast origin and disconnect all listeners. Confirm link termination?'
+          : 'Severing this P2P audio link will disconnect your receiver from the station mesh. Confirm link termination?',
+      confirmLabel: 'CONFIRM',
+      cancelLabel: 'ABORT',
+      onConfirm: () => {
+        systemDialog.open = false;
+        abortArmed = false;
+        window.location.hash = '';
+        window.location.reload();
+      },
+      onCancel: () => {
+        systemDialog.open = false;
+        abortArmed = false;
+      }
+    };
+  }
+
   function openStationConflictDialog(conflictId: string) {
     systemDialog = {
       open: true,
@@ -895,8 +922,19 @@
         </button>
       {/if}
       {#if mode !== 'select'}
-        <button type="button" class="exit-btn" onclick={() => { window.location.hash = ''; window.location.reload(); }}>
-          ✕ ABORT LINK
+        <button
+          type="button"
+          class="exit-btn"
+          class:armed={abortArmed}
+          onclick={triggerAbortSequence}
+          title="Arm & Confirm Link Termination"
+        >
+          <span class="abort-hazard-bar top" aria-hidden="true"></span>
+          <span class="abort-inner">
+            <span class="abort-led" aria-hidden="true"></span>
+            <span class="abort-label">{abortArmed ? 'ARMED // FIRE' : 'ABORT LINK'}</span>
+          </span>
+          <span class="abort-hazard-bar bottom" aria-hidden="true"></span>
         </button>
       {/if}
       <div class="peer-id-badge">
@@ -1551,22 +1589,108 @@
   }
 
   .exit-btn {
-    background: rgba(255, 0, 60, 0.16);
-    color: var(--neon-magenta);
-    border: 1px solid rgba(255, 0, 60, 0.55);
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 158px;
+    height: 38px;
+    padding: 0;
+    background: linear-gradient(180deg, #1b060c 0%, #0d0205 100%);
+    color: #ff385c;
+    border: 1px solid rgba(255, 30, 60, 0.65);
     font-family: var(--font-mono);
-    font-size: 0.78rem;
-    padding: 7px 12px;
-    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+    font-size: 0.72rem;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s;
+    overflow: hidden;
+    user-select: none;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 130, 150, 0.2),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.75),
+      0 3px 0 #160308,
+      0 5px 12px rgba(0, 0, 0, 0.7);
+    transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
 
   .exit-btn:hover {
-    background: rgba(255, 0, 60, 0.35);
-    color: #fff;
+    background: linear-gradient(180deg, #2b0812 0%, #140307 100%);
+    border-color: #ff4466;
+    color: #ffffff;
+  }
+
+  .exit-btn:active {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.85),
+      0 1px 0 #160308;
+  }
+
+  .exit-btn.armed {
+    background: linear-gradient(180deg, #3b070e 0%, #1c0306 100%);
+    border-color: #ff1e1e;
+    color: #ffffff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 120, 120, 0.3),
+      0 3px 0 #1c0204,
+      0 0 16px rgba(255, 30, 30, 0.45);
+  }
+
+  .abort-hazard-bar {
+    display: block;
+    width: 100%;
+    height: 4px;
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 30, 60, 0.45) 0px,
+      rgba(255, 30, 60, 0.45) 5px,
+      #090204 5px,
+      #090204 10px
+    );
+    flex-shrink: 0;
+  }
+
+  .exit-btn.armed .abort-hazard-bar {
+    background: repeating-linear-gradient(
+      -45deg,
+      #ff1e1e 0px,
+      #ff1e1e 6px,
+      #090204 6px,
+      #090204 12px
+    );
+  }
+
+  .abort-inner {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 10px;
+    white-space: nowrap;
+  }
+
+  .abort-led {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255, 30, 60, 0.55);
+    border: 1px solid rgba(255, 120, 140, 0.5);
+    flex-shrink: 0;
+  }
+
+  .exit-btn.armed .abort-led {
+    background: #ff2a2a;
+    border-color: #ffaaaa;
+    box-shadow: 0 0 8px #ff1e1e;
+    animation: abort-led-blink 0.5s infinite alternate ease-in-out;
+  }
+
+  @keyframes abort-led-blink {
+    0% { opacity: 0.4; }
+    100% { opacity: 1; }
   }
 
   .peer-id-badge {
