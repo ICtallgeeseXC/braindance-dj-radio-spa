@@ -150,3 +150,49 @@ body::after {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--neon-cyan);
 }
+
+/* NERV-UI Tactical Tooltip */
+.tooltip-wrap,
+.vis-tooltip-wrap {
+  display: inline-flex;
+}
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 9800;
+  padding: 5px 10px;
+  background: rgba(2, 4, 9, 0.97);
+  border: 1px solid rgba(255, 119, 0, 0.65);
+  border-left: 3px solid #ff7700;
+  color: #ffaa33;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.85), 0 0 10px rgba(255, 119, 0, 0.18);
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+
+[data-tooltip][data-tooltip-align='right']::after {
+  left: auto;
+  right: 0;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-within::after {
+  opacity: 1;
+  transform: translateY(0);
+}

@@ -560,23 +560,25 @@
 
 <div class="eva-audiovisual-panel" role="region" aria-label="AUDIOVISUAL Oscilloscope & Timer">
   <div class="vis-top-bar">
-    <button
-      type="button"
-      class="vis-mode-pill"
-      class:is-lo={visMode === 'lo'}
-      class:is-hi={visMode === 'hi'}
-      class:is-off={visMode === 'off'}
-      onclick={cycleVisMode}
-      title="Cycle Visualizer Mode: LO (30fps) / HI (60fps) / OFF"
-    >
-      <span class="vis-led" aria-hidden="true"></span>
-      <span class="vis-prefix">VIS //</span>
-      <span class="vis-state">{visMode.toUpperCase()}</span>
-      <span class="vis-bars" aria-hidden="true">
-        <span class="vis-bar" class:lit={visMode !== 'off'}></span>
-        <span class="vis-bar" class:lit={visMode === 'hi'}></span>
-      </span>
-    </button>
+    <div class="vis-tooltip-wrap" data-tooltip="CYCLE VIS: LO (30FPS) / HI (60FPS) / OFF">
+      <button
+        type="button"
+        class="vis-mode-pill"
+        class:is-lo={visMode === 'lo'}
+        class:is-hi={visMode === 'hi'}
+        class:is-off={visMode === 'off'}
+        onclick={cycleVisMode}
+        aria-label="Cycle Visualizer Mode: LO (30fps) / HI (60fps) / OFF"
+      >
+        <span class="vis-led" aria-hidden="true"></span>
+        <span class="vis-prefix">VIS //</span>
+        <span class="vis-state">{visMode.toUpperCase()}</span>
+        <span class="vis-bars" aria-hidden="true">
+          <span class="vis-bar" class:lit={visMode !== 'off'}></span>
+          <span class="vis-bar" class:lit={visMode === 'hi'}></span>
+        </span>
+      </button>
+    </div>
   </div>
   <svg class="audiovisual-svg" viewBox="0 0 880 320" preserveAspectRatio="xMidYMid meet">
     <defs>

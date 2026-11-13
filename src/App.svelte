@@ -922,20 +922,22 @@
         </button>
       {/if}
       {#if mode !== 'select'}
-        <button
-          type="button"
-          class="exit-btn"
-          class:armed={abortArmed}
-          onclick={triggerAbortSequence}
-          title="Arm & Confirm Link Termination"
-        >
-          <span class="abort-hazard-bar top" aria-hidden="true"></span>
-          <span class="abort-inner">
-            <span class="abort-led" aria-hidden="true"></span>
-            <span class="abort-label">{abortArmed ? 'ARMED // FIRE' : 'ABORT LINK'}</span>
-          </span>
-          <span class="abort-hazard-bar bottom" aria-hidden="true"></span>
-        </button>
+        <div class="tooltip-wrap" data-tooltip="ARM & CONFIRM LINK TERMINATION" data-tooltip-align="right">
+          <button
+            type="button"
+            class="exit-btn"
+            class:armed={abortArmed}
+            onclick={triggerAbortSequence}
+            aria-label="Arm and Confirm Link Termination"
+          >
+            <span class="abort-hazard-bar top" aria-hidden="true"></span>
+            <span class="abort-inner">
+              <span class="abort-led" aria-hidden="true"></span>
+              <span class="abort-label">{abortArmed ? 'ARMED // FIRE' : 'ABORT LINK'}</span>
+            </span>
+            <span class="abort-hazard-bar bottom" aria-hidden="true"></span>
+          </button>
+        </div>
       {/if}
       <div class="peer-id-badge">
         <span class="node-label">UNIT_ID:</span>
