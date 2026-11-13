@@ -925,6 +925,17 @@
         <animate attributeName="opacity" values="0.7;0.18;0.7" dur="4.5s" repeatCount="indefinite" />
       </line>
     {/if}
+
+    <!-- NERV-UI Repeating Grid Pattern Overlay when Paused -->
+    {#if !isPlaying || !isAudioActuallyPlaying}
+      <g class="paused-grid-overlay" pointer-events="none">
+        <rect x="2" y="38" width="876" height="278" fill="rgba(4, 1, 1, 0.78)" />
+        {#each [124, 188, 252] as rowY}
+          <text x="295" y={rowY} text-anchor="middle" class="paused-grid-text">PAUSED</text>
+          <text x="585" y={rowY} text-anchor="middle" class="paused-grid-text">PAUSED</text>
+        {/each}
+      </g>
+    {/if}
   </svg>
 
   <!-- Sleek Interactive Seek Scrubber Bar at Bottom -->
@@ -1323,5 +1334,14 @@
   @keyframes seele-eq-pulse {
     0% { transform: scaleY(0.35); opacity: 0.6; }
     100% { transform: scaleY(1); opacity: 1; }
+  }
+
+  .paused-grid-text {
+    fill: #dc1e1e;
+    font-family: "Oswald", "Impact", "Arial Narrow", var(--font-display), sans-serif;
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: 0.24em;
+    opacity: 0.92;
   }
 </style>
