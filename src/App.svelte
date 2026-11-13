@@ -163,6 +163,22 @@
       : true
   );
   let compressStatus = $state<string>('');
+  let compressTrackPct = $state<number>(0);
+  let compressBatchPct = $state<number>(0);
+  let compressTrackIndex = $state<number>(0);
+  let compressTrackTotal = $state<number>(0);
+  let compressFileName = $state<string>('');
+
+  const transcodeTrackTween = new Tween(0, { duration: 160, easing: cubicOut });
+  const transcodeBatchTween = new Tween(0, { duration: 180, easing: cubicOut });
+
+  $effect(() => {
+    transcodeTrackTween.set(compressTrackPct, { duration: compressTrackPct === 0 ? 0 : 160 });
+  });
+
+  $effect(() => {
+    transcodeBatchTween.set(compressBatchPct, { duration: compressBatchPct === 0 ? 0 : 180 });
+  });
 
   $effect(() => {
     try {
@@ -521,9 +537,14 @@
   // Parse (and optionally transcode) files, registering them in the playlist. Returns new trackIds.
   async function ingestFiles(files: File[]): Promise<string[]> {
     const added: string[] = [];
+    compressTrackTotal = files.length;
 
     for (let idx = 0; idx < files.length; idx++) {
       let file = files[idx];
+      compressTrackIndex = idx + 1;
+      compressFileName = file.name;
+      compressTrackPct = 0;
+      compressBatchPct = Math.round((idx / files.length) * 100);
       compressStatus = `Processing track ${idx + 1}/${files.length}: ${file.name}...`;
 
       // If auto-compress is enabled and file is not already a small mp3
@@ -531,12 +552,17 @@
         try {
           compressStatus = `Transcoding ${idx + 1}/${files.length} to 128k MP3... 0%`;
           file = await compressAudioTo128kMp3(file, file.name, (pct) => {
+            compressTrackPct = pct;
+            compressBatchPct = Math.round(((idx + pct / 100) / files.length) * 100);
             compressStatus = `Transcoding ${idx + 1}/${files.length} to 128k MP3... ${pct}%`;
           });
         } catch (err) {
           console.warn(`[DJ Compressor] Failed to transcode ${file.name}, using original:`, err);
         }
       }
+
+      compressTrackPct = 100;
+      compressBatchPct = Math.round(((idx + 1) / files.length) * 100);
 
       const meta = await parseAudioFile(file);
       const trackId = 't_' + Math.random().toString(36).substring(2, 9);
@@ -570,11 +596,20 @@
     if (!input.files || input.files.length === 0) return;
     uploadProcessing = true;
     compressStatus = '';
+    compressTrackPct = 0;
+    compressBatchPct = 0;
 
-    await ingestFiles(Array.from(input.files));
-
-    compressStatus = '';
-    uploadProcessing = false;
+    try {
+      await ingestFiles(Array.from(input.files));
+    } finally {
+      compressStatus = '';
+      compressTrackPct = 0;
+      compressBatchPct = 0;
+      compressTrackIndex = 0;
+      compressTrackTotal = 0;
+      compressFileName = '';
+      uploadProcessing = false;
+    }
   }
 
   // DJ: append songs to the live playlist without interrupting playback
@@ -585,6 +620,8 @@
     input.value = ''; // allow re-selecting the same files later
     addingTracks = true;
     compressStatus = '';
+    compressTrackPct = 0;
+    compressBatchPct = 0;
 
     try {
       const added = await ingestFiles(files);
@@ -598,6 +635,11 @@
       }
     } finally {
       compressStatus = '';
+      compressTrackPct = 0;
+      compressBatchPct = 0;
+      compressTrackIndex = 0;
+      compressTrackTotal = 0;
+      compressFileName = '';
       addingTracks = false;
     }
   }
@@ -1248,7 +1290,39 @@
                   <span class="dropzone-body">
                     {#if uploadProcessing}
                       <span class="dropzone-tag">PROCESSING // 解析中</span>
-                      <span class="dropzone-main">{compressStatus || 'PARSING AUDIO HEADERS...'}</span>
+                      <div class="buffer-meters phase-rails transcode-rails">
+                        <div class="phase-rail-spine" aria-hidden="true"></div>
+                        <div class="phase-rail-row">
+                          <span class="phase-tag">TRK {compressTrackIndex}/{compressTrackTotal}</span>
+                          <div
+                            class="phase-rail-bar"
+                            class:charged={Math.round(transcodeTrackTween.current) >= 100}
+                            class:empty={Math.round(transcodeTrackTween.current) === 0}
+                          >
+                            <div class="phase-rail-fill" style="width: {transcodeTrackTween.current}%"></div>
+                            <div class="phase-rail-scanlines" aria-hidden="true"></div>
+                            <div class="phase-rail-overlay">
+                              <span class="phase-name">{autoCompressMp3 ? 'MP3_128K // ENCODE' : 'INGEST // PARSE'}</span>
+                              <span class="phase-pct">{Math.round(transcodeTrackTween.current)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="phase-rail-row">
+                          <span class="phase-tag">BATCH</span>
+                          <div
+                            class="phase-rail-bar"
+                            class:charged={Math.round(transcodeBatchTween.current) >= 100}
+                            class:empty={Math.round(transcodeBatchTween.current) === 0}
+                          >
+                            <div class="phase-rail-fill" style="width: {transcodeBatchTween.current}%"></div>
+                            <div class="phase-rail-scanlines" aria-hidden="true"></div>
+                            <div class="phase-rail-overlay">
+                              <span class="phase-name">{compressFileName ? compressFileName.slice(0, 22) : 'QUEUE'}</span>
+                              <span class="phase-pct">{Math.round(transcodeBatchTween.current)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     {:else if djFiles.length > 0}
                       <span class="dropzone-tag ready">SIGNAL READY // 準備完了</span>
                       <span class="dropzone-main">{djFiles.length} {djFiles.length === 1 ? 'TRACK' : 'TRACKS'} ARMED FOR BROADCAST</span>
@@ -2739,7 +2813,15 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
     padding: 14px 16px;
+  }
+
+  .transcode-rails {
+    width: 100%;
+    margin-top: 4px;
+    text-align: left;
   }
 
   .dropzone-label.ready {
