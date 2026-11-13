@@ -211,8 +211,8 @@
   let injectSecret = $state<string>('');
   let listenerInjectToken = $state<string>('');
   let listenerCanInject = $state<boolean>(false);
-  let activeVisMode = $state<'off' | 'lo' | 'hi'>(
-    (typeof localStorage !== 'undefined' && (localStorage.getItem('p2p_vis_mode') as 'off' | 'lo' | 'hi')) || 'lo'
+  let activeVisMode = $state<'off' | 'lo' | 'hi' | '666'>(
+    (typeof localStorage !== 'undefined' && (localStorage.getItem('p2p_vis_mode') as 'off' | 'lo' | 'hi' | '666')) || 'lo'
   );
 
   // Start-page HARMONIC_SYNC oscilloscope animation

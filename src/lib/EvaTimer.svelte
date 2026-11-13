@@ -9,7 +9,7 @@
     mode = 'listener',
     onSeek = (frac: number) => {},
     getAudioData = () => null,
-    onVisModeChange = (_visMode: 'off' | 'lo' | 'hi') => {}
+    onVisModeChange = (_visMode: 'off' | 'lo' | 'hi' | '666') => {}
   }: {
     currentTime: number;
     duration: number;
@@ -18,19 +18,20 @@
     mode?: string;
     onSeek?: (frac: number) => void;
     getAudioData?: () => any;
-    onVisModeChange?: (visMode: 'off' | 'lo' | 'hi') => void;
+    onVisModeChange?: (visMode: 'off' | 'lo' | 'hi' | '666') => void;
   } = $props();
 
   let showRemaining = $state(true);
 
-  type VisMode = 'off' | 'lo' | 'hi';
+  type VisMode = 'off' | 'lo' | 'hi' | '666';
   let visMode = $state<VisMode>(
     (typeof localStorage !== 'undefined' && (localStorage.getItem('p2p_vis_mode') as VisMode)) || 'lo'
   );
   let wasVisOff = false;
 
   function cycleVisMode() {
-    visMode = visMode === 'lo' ? 'hi' : visMode === 'hi' ? 'off' : 'lo';
+    visMode =
+      visMode === 'lo' ? 'hi' : visMode === 'hi' ? '666' : visMode === '666' ? 'off' : 'lo';
     try { localStorage.setItem('p2p_vis_mode', visMode); } catch {}
     onVisModeChange(visMode);
     if (visMode === 'off') {
@@ -304,6 +305,104 @@
   let rafId: number | null = null;
   let frameCounter = 0;
 
+  // Psychographic Display (666 Mode) — 10 neural link strands (A¹ bottom .. A¹⁰ top)
+  const PSYCHO_BANDS = [
+    { sup: '1', minHz: 30, maxHz: 90, baseY: 266 },
+    { sup: '2', minHz: 90, maxHz: 180, baseY: 243 },
+    { sup: '3', minHz: 180, maxHz: 350, baseY: 220 },
+    { sup: '4', minHz: 350, maxHz: 700, baseY: 197 },
+    { sup: '5', minHz: 700, maxHz: 1400, baseY: 174 },
+    { sup: '6', minHz: 1400, maxHz: 2800, baseY: 151 },
+    { sup: '7', minHz: 2800, maxHz: 5000, baseY: 128 },
+    { sup: '8', minHz: 5000, maxHz: 8000, baseY: 105 },
+    { sup: '9', minHz: 8000, maxHz: 12000, baseY: 82 },
+    { sup: '10', minHz: 12000, maxHz: 18000, baseY: 59 }
+  ];
+  const PSYCHO_CONVERGE_X = 484;
+  const PSYCHO_CONVERGE_Y = 289;
+  const PSYCHO_THRESHOLD = 0.26;
+  const psychoPaths: (SVGPathElement | null)[] = Array(10).fill(null);
+  const psychoLeftPaths: (SVGPathElement | null)[] = Array(10).fill(null);
+  let psychoEyeGroup: SVGGElement | null = $state(null);
+  const psychoSmoothedEnergy = new Float32Array(10);
+
+  function buildPsychoLeftPath(idx: number): string {
+    const baseY = PSYCHO_BANDS[idx].baseY;
+    const kneeX = 334 - idx * 2.4;
+    return `M14,${baseY} L${kneeX.toFixed(1)},${baseY} L${PSYCHO_CONVERGE_X},${PSYCHO_CONVERGE_Y}`;
+  }
+
+  function buildPsychoRightPath(idx: number, energy: number, timeData: Uint8Array | null, nowSec: number): string {
+    const targetY = PSYCHO_BANDS[idx].baseY;
+    const chaos = Math.max(0, Math.min(1, (energy - PSYCHO_THRESHOLD) / 0.34));
+    const points = 28;
+    let d = `M${PSYCHO_CONVERGE_X},${PSYCHO_CONVERGE_Y}`;
+
+    for (let s = 1; s <= points; s++) {
+      const p = s / points;
+      const baseX = PSYCHO_CONVERGE_X + p * 378;
+      // Smooth fan-out from convergence vertex toward each band's target stratum
+      const fanY = PSYCHO_CONVERGE_Y + (targetY - PSYCHO_CONVERGE_Y) * Math.pow(p, 0.72);
+
+      let waveSample = 0;
+      if (timeData && timeData.length > 0) {
+        const sampleIdx = (idx * 29 + s * 9) % timeData.length;
+        waveSample = (timeData[sampleIdx] - 128) / 128;
+      }
+
+      // Live audiograph displacement along the strand
+      const audioDisplaceY = waveSample * (8 + energy * 38) * Math.sin(p * Math.PI);
+      const harmonicRippleY = Math.sin(p * 10 - nowSec * (3.2 + idx * 0.25) + idx) * (2.5 + energy * 10);
+
+      // Artistic psychographic loop-backs & chaotic scrawls when energy crosses threshold
+      const loopAmp = chaos * p * (16 + energy * 34);
+      const loopX = loopAmp * Math.sin(nowSec * (2.7 + idx * 0.35) + s * 1.65 + waveSample * 4.2);
+      const loopY = loopAmp * Math.cos(nowSec * (3.3 + idx * 0.28) + s * 2.05 - waveSample * 4.8);
+
+      const x = Math.max(PSYCHO_CONVERGE_X + 2, Math.min(868, baseX + loopX));
+      const y = Math.max(46, Math.min(289, fanY + audioDisplaceY + harmonicRippleY + loopY));
+      d += ` L${x.toFixed(1)},${y.toFixed(1)}`;
+    }
+    return d;
+  }
+
+  function updatePsychograph(nowMs: number, audioData: any) {
+    const nowSec = nowMs * 0.001;
+    const sampleRate = audioData?.sampleRate || 44100;
+    const freqData: Uint8Array | null = audioData?.freq || null;
+    const timeData: Uint8Array | null = audioData?.time || null;
+
+    let totalEnergy = 0;
+    for (let i = 0; i < PSYCHO_BANDS.length; i++) {
+      const band = PSYCHO_BANDS[i];
+      const rawEnergy = freqData ? getBandEnergy(freqData, band.minHz, band.maxHz, sampleRate) : 0;
+      psychoSmoothedEnergy[i] = psychoSmoothedEnergy[i] * 0.35 + rawEnergy * 0.65;
+      const e = psychoSmoothedEnergy[i];
+      totalEnergy += e;
+
+      const rightEl = psychoPaths[i];
+      if (rightEl) {
+        rightEl.setAttribute('d', buildPsychoRightPath(i, e, timeData, nowSec));
+        rightEl.setAttribute('stroke-width', (1.25 + e * 1.35).toFixed(2));
+        rightEl.setAttribute('opacity', (0.68 + Math.min(0.32, e * 0.5)).toFixed(2));
+      }
+
+      const leftEl = psychoLeftPaths[i];
+      if (leftEl) {
+        leftEl.setAttribute('opacity', (0.62 + Math.min(0.38, e * 0.65)).toFixed(2));
+      }
+    }
+
+    if (psychoEyeGroup) {
+      const avgEnergy = totalEnergy / PSYCHO_BANDS.length;
+      const eyeChaos = Math.max(0, Math.min(1, (avgEnergy - 0.28) / 0.32));
+      psychoEyeGroup.setAttribute('opacity', (eyeChaos * 0.92).toFixed(2));
+      const jx = eyeChaos * Math.sin(nowSec * 19) * 3.5;
+      const jy = eyeChaos * Math.cos(nowSec * 23) * 2.5;
+      psychoEyeGroup.setAttribute('transform', `translate(${jx.toFixed(1)}, ${jy.toFixed(1)})`);
+    }
+  }
+
   function computeInstantChannelOffset(chanIdx: number, audioData: any): number {
     if (!audioData || !audioData.freq) return -24;
 
@@ -441,77 +540,81 @@
     // 1. Update 7-Segment Digital Clock with Shadow 8s
     applyDigits(computeDisplaySecs(estAudio));
 
-    const minWaveInterval = visMode === 'hi' ? 0 : 28;
+    const minWaveInterval = visMode === 'hi' || visMode === '666' ? 0 : 28;
     if (minWaveInterval === 0 || now - lastWaveRenderAt >= minWaveInterval) {
       lastWaveRenderAt = now;
 
       // Sample real-time audio spectrum
       const audioData = getAudioData ? getAudioData() : null;
 
-      if (audioData && audioData.freq) {
-        // 2. Compute instantaneous scalar X for each channel and push to history buffer
+      if (visMode === '666') {
+        updatePsychograph(now, audioData);
+      } else {
+        if (audioData && audioData.freq) {
+          // 2. Compute instantaneous scalar X for each channel and push to history buffer
+          for (let i = 0; i < CHANNELS.length; i++) {
+            const targetOffset = computeInstantChannelOffset(i, audioData);
+            smoothedX[i] = smoothedX[i] * 0.22 + targetOffset * 0.78;
+
+            const buf = historyBuffers[i];
+            for (let k = HISTORY_LEN - 1; k > 0; k--) {
+              buf[k] = buf[k - 1];
+            }
+            buf[0] = smoothedX[i];
+          }
+        }
+
+        // 3. Render waveform paths for all 7 channels
         for (let i = 0; i < CHANNELS.length; i++) {
-          const targetOffset = computeInstantChannelOffset(i, audioData);
-          smoothedX[i] = smoothedX[i] * 0.22 + targetOffset * 0.78;
-
-          const buf = historyBuffers[i];
-          for (let k = HISTORY_LEN - 1; k > 0; k--) {
-            buf[k] = buf[k - 1];
+          const pathEl = wavePaths[i];
+          if (pathEl) {
+            const cx = 20 + i * 112 + 52;
+            pathEl.setAttribute('d', buildWavePath(i, cx));
           }
-          buf[0] = smoothedX[i];
-        }
-      }
-
-      // 3. Render waveform paths for all 7 channels
-      for (let i = 0; i < CHANNELS.length; i++) {
-        const pathEl = wavePaths[i];
-        if (pathEl) {
-          const cx = 20 + i * 112 + 52;
-          pathEl.setAttribute('d', buildWavePath(i, cx));
-        }
-      }
-
-      // 4. Update Top-Point Telemetry "X: ..." values & Dynamic Color (only when changed)
-      for (let i = 0; i < CHANNELS.length; i++) {
-        const textEl = telemetryTexts[i];
-        const groupEl = chanGroups[i];
-
-        if (!audioData || !audioData.freq) {
-          if (groupEl && lastIsBlue[i]) {
-            groupEl.classList.remove('is-blue');
-            lastIsBlue[i] = false;
-          }
-          if (textEl && lastTelemetryStr[i] !== 'X: -9.99') {
-            textEl.textContent = 'X: -9.99';
-            lastTelemetryStr[i] = 'X: -9.99';
-          }
-          continue;
         }
 
-        const topOffset = historyBuffers[i][0];
-        const clampedTop = Math.max(-24, Math.min(24, topOffset));
-        const xVal = (clampedTop / 24) * 9.99;
-        const isBlue = xVal > 0;
+        // 4. Update Top-Point Telemetry "X: ..." values & Dynamic Color (only when changed)
+        for (let i = 0; i < CHANNELS.length; i++) {
+          const textEl = telemetryTexts[i];
+          const groupEl = chanGroups[i];
 
-        if (groupEl && lastIsBlue[i] !== isBlue) {
-          groupEl.classList.toggle('is-blue', isBlue);
-          lastIsBlue[i] = isBlue;
-        }
-
-        if (textEl) {
-          let nextStr: string;
-          if (clampedTop <= -23.95) {
-            nextStr = 'X: -9.99';
-          } else if (clampedTop >= 23.95) {
-            nextStr = 'X: +9.99';
-          } else if (xVal > 0) {
-            nextStr = `X: +${xVal.toFixed(2)}`;
-          } else {
-            nextStr = `X: ${xVal.toFixed(2)}`;
+          if (!audioData || !audioData.freq) {
+            if (groupEl && lastIsBlue[i]) {
+              groupEl.classList.remove('is-blue');
+              lastIsBlue[i] = false;
+            }
+            if (textEl && lastTelemetryStr[i] !== 'X: -9.99') {
+              textEl.textContent = 'X: -9.99';
+              lastTelemetryStr[i] = 'X: -9.99';
+            }
+            continue;
           }
-          if (lastTelemetryStr[i] !== nextStr) {
-            textEl.textContent = nextStr;
-            lastTelemetryStr[i] = nextStr;
+
+          const topOffset = historyBuffers[i][0];
+          const clampedTop = Math.max(-24, Math.min(24, topOffset));
+          const xVal = (clampedTop / 24) * 9.99;
+          const isBlue = xVal > 0;
+
+          if (groupEl && lastIsBlue[i] !== isBlue) {
+            groupEl.classList.toggle('is-blue', isBlue);
+            lastIsBlue[i] = isBlue;
+          }
+
+          if (textEl) {
+            let nextStr: string;
+            if (clampedTop <= -23.95) {
+              nextStr = 'X: -9.99';
+            } else if (clampedTop >= 23.95) {
+              nextStr = 'X: +9.99';
+            } else if (xVal > 0) {
+              nextStr = `X: +${xVal.toFixed(2)}`;
+            } else {
+              nextStr = `X: ${xVal.toFixed(2)}`;
+            }
+            if (lastTelemetryStr[i] !== nextStr) {
+              textEl.textContent = nextStr;
+              lastTelemetryStr[i] = nextStr;
+            }
           }
         }
       }
@@ -563,22 +666,24 @@
 
 <div class="eva-audiovisual-panel" role="region" aria-label="AUDIOVISUAL Oscilloscope & Timer">
   <div class="vis-top-bar">
-    <div class="vis-tooltip-wrap" data-tooltip="CYCLE VIS: LO (30FPS) / HI (60FPS) / OFF">
+    <div class="vis-tooltip-wrap" data-tooltip="CYCLE VIS: LO (30FPS) / HI (60FPS) / 666 (PSYCHOGRAPHIC) / OFF">
       <button
         type="button"
         class="vis-mode-pill"
         class:is-lo={visMode === 'lo'}
         class:is-hi={visMode === 'hi'}
+        class:is-666={visMode === '666'}
         class:is-off={visMode === 'off'}
         onclick={cycleVisMode}
-        aria-label="Cycle Visualizer Mode: LO (30fps) / HI (60fps) / OFF"
+        aria-label="Cycle Visualizer Mode: LO (30fps) / HI (60fps) / 666 (Psychographic) / OFF"
       >
         <span class="vis-led" aria-hidden="true"></span>
         <span class="vis-prefix">VIS //</span>
         <span class="vis-state">{visMode.toUpperCase()}</span>
         <span class="vis-bars" aria-hidden="true">
           <span class="vis-bar" class:lit={visMode !== 'off'}></span>
-          <span class="vis-bar" class:lit={visMode === 'hi'}></span>
+          <span class="vis-bar" class:lit={visMode === 'hi' || visMode === '666'}></span>
+          <span class="vis-bar" class:lit={visMode === '666'}></span>
         </span>
       </button>
     </div>
@@ -595,6 +700,15 @@
         <stop offset="0%" stop-color="#160401" stop-opacity="0.25" />
         <stop offset="100%" stop-color="#060101" stop-opacity="0.85" />
       </radialGradient>
+
+      <!-- Phosphor glow for Psychographic 666 Mode -->
+      <filter id="psycho-glow" x="-15%" y="-15%" width="130%" height="130%">
+        <feGaussianBlur stdDeviation="1.6" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
     </defs>
 
     <!-- Dark Vignette Background with NERV Gridlines -->
@@ -602,8 +716,16 @@
     <rect x="2" y="2" width="876" height="316" fill="url(#eva-audiovisual-grid)" opacity="0.9" />
     <rect x="2" y="2" width="876" height="316" fill="url(#audiovisual-vignette)" stroke="#2a0802" stroke-width="1.2" pointer-events="none" />
 
-    <!-- Top Left Header: "AUDIOVISUAL" in bright electric orange -->
-    <text x="18" y="30" class="audiovisual-title">AUDIOVISUAL</text>
+    <!-- Top Left Header: "AUDIOVISUAL" or "PSYCHOGRAPHIC DISPLAY" in 666 Mode -->
+    {#if visMode === '666'}
+      <rect x="14" y="9" width="220" height="24" rx="5" fill="none" stroke="#ff7700" stroke-width="1.5" />
+      <text x="124" y="25.5" text-anchor="middle" class="psycho-display-title">PSYCHOGRAPHIC DISPLAY</text>
+      <text x="246" y="19" class="psycho-phase-title">Phase 4</text>
+      <text x="246" y="33" class="psycho-sub-title">NERV_AUDIO // CONTAMINATION 666</text>
+      <line x1="12" y1="40" x2="868" y2="40" stroke="#ff7700" stroke-width="1.6" />
+    {:else}
+      <text x="18" y="30" class="audiovisual-title">AUDIOVISUAL</text>
+    {/if}
 
     {#if visMode !== 'off'}
       <!-- Top Right 7-Segment Digital Clock (MM:SS:CC) with Shadow Digital 8s -->
@@ -791,8 +913,82 @@
       </g>
     </g>
 
-    <!-- 7 VERTICAL OSCILLOSCOPE CHANNELS OR SEELE 02 SOUND ONLY MONOLITH -->
-    {#if visMode !== 'off'}
+    <!-- 7 VERTICAL OSCILLOSCOPE CHANNELS, 666 PSYCHOGRAPHIC DISPLAY, OR SEELE 02 SOUND ONLY MONOLITH -->
+    {#if visMode === '666'}
+      <g class="psycho-display-group" filter="url(#psycho-glow)">
+        <!-- Left Converging Neural Links (LINK A¹ .. A¹⁰) & Live Right-Side Audiograph Strands -->
+        {#each PSYCHO_BANDS as band, i}
+          <text x="64" y={band.baseY - 5} class="psycho-link-label">
+            LINK A<tspan dy="-4" font-size="7.5">{band.sup}</tspan>
+          </text>
+          <path
+            bind:this={psychoLeftPaths[i]}
+            d={buildPsychoLeftPath(i)}
+            fill="none"
+            stroke="#fff49a"
+            stroke-width="1.35"
+            opacity="0.82"
+          />
+          <path
+            bind:this={psychoPaths[i]}
+            d={buildPsychoRightPath(i, 0.1, null, 0)}
+            fill="none"
+            stroke="#fff6aa"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            opacity="0.85"
+          />
+        {/each}
+
+        <!-- Psychographic Contamination Eye Motifs (emerge above threshold) -->
+        <g bind:this={psychoEyeGroup} opacity="0">
+          <!-- Primary Mid-Right Eye Scrawl -->
+          <path
+            d="M578,136 Q616,104 656,134 Q616,162 578,136 Z M598,134 A17,17 0 1,0 634,134 A17,17 0 1,0 598,134 M610,134 A6,6 0 1,0 622,134 A6,6 0 1,0 610,134"
+            fill="none"
+            stroke="#fff6aa"
+            stroke-width="1.6"
+          />
+          <path
+            d="M574,130 L584,119 L594,125 L605,112 L617,120 L629,110 L640,122 L652,115 L660,129"
+            fill="none"
+            stroke="#fff6aa"
+            stroke-width="1.2"
+            opacity="0.85"
+          />
+          <!-- Upper-Right Secondary Eye Scrawl -->
+          <path
+            d="M694,88 Q726,64 760,86 Q726,106 694,88 Z M713,86 A13,13 0 1,0 741,86 A13,13 0 1,0 713,86 M723,86 A4.5,4.5 0 1,0 732,86 A4.5,4.5 0 1,0 723,86"
+            fill="none"
+            stroke="#fff6aa"
+            stroke-width="1.45"
+          />
+          <path
+            d="M690,83 L702,71 L713,77 L725,65 L737,74 L749,67 L762,81"
+            fill="none"
+            stroke="#fff6aa"
+            stroke-width="1.1"
+            opacity="0.82"
+          />
+        </g>
+
+        <!-- Bottom Calibrated Psychographic Ruler (-50 .. ±0 .. +50) -->
+        <line x1="12" y1="292" x2="868" y2="292" stroke="#ff7700" stroke-width="1.5" />
+        {#each [-50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50] as tickVal}
+          {@const tx = 460 + tickVal * 8}
+          <line x1={tx} y1="292" x2={tx} y2="300" stroke="#ff7700" stroke-width="1.3" />
+          <text x={tx} y="313" text-anchor="middle" class="psycho-ruler-label">
+            {tickVal === 0 ? '±0' : tickVal > 0 ? `+${tickVal}` : `${tickVal}`}
+          </text>
+          {#if tickVal < 50}
+            {#each [1, 2, 3, 4] as sub}
+              <line x1={tx + sub * 16} y1="292" x2={tx + sub * 16} y2="296.5" stroke="#ff7700" stroke-width="0.9" opacity="0.85" />
+            {/each}
+          {/if}
+        {/each}
+      </g>
+    {:else if visMode !== 'off'}
       {#each CHANNELS as ch, i}
         {@const chanX = 20 + i * 112}
         {@const cx = chanX + 52}
@@ -1081,6 +1277,9 @@
   .vis-bar:nth-child(2) {
     height: 10px;
   }
+  .vis-bar:nth-child(3) {
+    height: 13px;
+  }
   .vis-mode-pill.is-lo .vis-bar.lit {
     background: #00f0ff;
     border-color: #00f0ff;
@@ -1107,6 +1306,64 @@
   .vis-mode-pill.is-hi:hover {
     background: rgba(255, 42, 77, 0.14);
     border-color: #ff2a4d;
+  }
+
+  .vis-mode-pill.is-666 {
+    border-color: rgba(255, 224, 102, 0.85);
+    box-shadow: inset 0 0 10px rgba(255, 119, 0, 0.25), 0 0 8px rgba(255, 224, 102, 0.2);
+  }
+  .vis-mode-pill.is-666 .vis-led {
+    background: #ffe066;
+    box-shadow: 0 0 8px rgba(255, 224, 102, 0.95);
+  }
+  .vis-mode-pill.is-666 .vis-state {
+    color: #ffe066;
+    text-shadow: 0 0 6px rgba(255, 224, 102, 0.65);
+  }
+  .vis-mode-pill.is-666 .vis-bar.lit {
+    background: #ffe066;
+    border-color: #ffe066;
+  }
+  .vis-mode-pill.is-666:hover {
+    background: rgba(255, 224, 102, 0.14);
+    border-color: #ffe066;
+  }
+
+  .psycho-display-title {
+    fill: #ff8811;
+    font-family: 'Orbitron', 'Share Tech Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+  }
+  .psycho-phase-title {
+    fill: #ff8811;
+    font-family: 'Orbitron', 'Share Tech Mono', monospace;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+  }
+  .psycho-sub-title {
+    fill: #ff7700;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    opacity: 0.9;
+  }
+  .psycho-link-label {
+    fill: #ff8811;
+    font-family: 'Orbitron', 'Share Tech Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+  }
+  .psycho-ruler-label {
+    fill: #ff7700;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
   }
 
   .vis-mode-pill.is-off {

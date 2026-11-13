@@ -20,7 +20,7 @@
     peers: PeerNodeInfo[];
     activeStream?: boolean;
     volume?: number;
-    visMode?: 'off' | 'lo' | 'hi';
+    visMode?: 'off' | 'lo' | 'hi' | '666';
     trackTitle?: string;
     trackArtist?: string;
     currentTime?: number;
@@ -95,7 +95,10 @@
         tone: volPct === 0 ? 'fail' : 'hot'
       }),
       () => ({
-        text: `if (vis_mode === '${visTag}') ${visMode === 'off' ? 'deploy SEELE_02;' : 'render_fft();'}`,
+        text:
+          visMode === '666'
+            ? `${addr} psychograph.contamination(PHASE_4, LINK_A1..A10);`
+            : `if (vis_mode === '${visTag}') ${visMode === 'off' ? 'deploy SEELE_02;' : 'render_fft();'}`,
         tone: visMode === 'off' ? 'dim' : 'hot'
       }),
       () => ({
