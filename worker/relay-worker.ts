@@ -83,18 +83,22 @@ export class P2PRelayDO extends DurableObject<Env> {
         if (!peerId || !stationId) return;
 
         // Prevent hijacking: reject a different DJ trying to claim an already-live station
-        for (const other of this.ctx.getWebSockets()) {
-          if (other === ws) continue;
-          const meta = other.deserializeAttachment() as PeerAttachment | null;
-          if (!meta) continue;
-          const isDjCollision = (role === 'dj' || meta.role === 'dj') && meta.stationId === stationId && (meta.peerId === peerId || meta.role === 'dj');
-          if (isDjCollision && (!hostToken || meta.hostToken !== hostToken)) {
-            ws.serializeAttachment(null);
-            try {
-              ws.send(JSON.stringify({ type: 'register_rejected', reason: 'station_in_use', stationId }));
-              ws.close(4009, 'station_in_use');
-            } catch {}
-            return;
+        const djPeerId = `station-${stationId}-dj`;
+        const isIncomingDj = role === 'dj' || peerId === djPeerId;
+        if (isIncomingDj) {
+          for (const other of this.ctx.getWebSockets()) {
+            if (other === ws) continue;
+            const meta = other.deserializeAttachment() as PeerAttachment | null;
+            if (!meta) continue;
+            const isExistingDj = meta.stationId === stationId && (meta.role === 'dj' || meta.peerId === djPeerId);
+            if (isExistingDj && (!hostToken || meta.hostToken !== hostToken)) {
+              ws.serializeAttachment(null);
+              try {
+                ws.send(JSON.stringify({ type: 'register_rejected', reason: 'station_in_use', stationId }));
+                ws.close(4009, 'station_in_use');
+              } catch {}
+              return;
+            }
           }
         }
 

@@ -234,8 +234,10 @@ export function p2pRelayPlugin(): Plugin {
               const hostToken = typeof msg.hostToken === 'string' ? msg.hostToken.trim() : '';
               if (!peerId || !stationId) return;
 
-              const existing = clientsByPeerId.get(peerId);
-              if (existing && existing.conn.isOpen && (role === 'dj' || existing.role === 'dj')) {
+              const djPeerId = `station-${stationId}-dj`;
+              const isIncomingDj = role === 'dj' || peerId === djPeerId;
+              const existing = clientsByPeerId.get(djPeerId);
+              if (isIncomingDj && existing && existing.conn.isOpen) {
                 if (!hostToken || existing.hostToken !== hostToken) {
                   conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'station_in_use', stationId }));
                   try { socket.end(); } catch {}
