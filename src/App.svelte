@@ -5,7 +5,7 @@
   import { P2PMesh, type StationState, type PeerNodeInfo, type ToastVariant, type StationActionEvent } from './lib/p2p-mesh';
   import { PlayerController } from './lib/player-controller';
   import { parseAudioFile, type TrackMetadata } from './lib/audio-metadata';
-  import { CHUNK_SIZE, type TrackManifest } from './lib/chunk-pipeline';
+  import { CHUNK_SIZE, computeChunkHashes, sanitizeTrackManifest, type TrackManifest } from './lib/chunk-pipeline';
   import { syncNetworkTime, getSyncedTime } from './lib/time-sync';
   import { readTrackChunkFromDisk, getTrackFromDisk } from './lib/audio-storage';
   import { compressAudioTo128kMp3 } from './lib/audio-encoder';
@@ -269,8 +269,8 @@
   }
   const pendingInjectedTracks = new Map<string, PendingInjectTrack>();
 
-  function generateCryptoSecret(): string {
-    const bytes = new Uint8Array(12);
+  function generateCryptoSecret(byteLen = 16): string {
+    const bytes = new Uint8Array(byteLen);
     if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
       crypto.getRandomValues(bytes);
     } else {
@@ -279,6 +279,34 @@
       }
     }
     return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function getOrCreateHostToken(code: string): string {
+    const clean = code.toLowerCase().trim();
+    const storageKey = `p2p_host_token_${clean}`;
+    try {
+      const existing = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(storageKey) : null;
+      if (existing && existing.trim().length >= 16) {
+        return existing.trim();
+      }
+    } catch {}
+    const fresh = generateCryptoSecret(24);
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(storageKey, fresh);
+      }
+    } catch {}
+    return fresh;
+  }
+
+  function rotateCoDjSecret() {
+    if (!mesh || mode !== 'dj') return;
+    const nextSecret = generateCryptoSecret();
+    injectSecret = nextSecret;
+    mesh.rotateInjectSecret(nextSecret);
+    pendingInjectedTracks.clear();
+    pushToast('warning', 'CO-DJ KEY ROTATED — PRIOR CLEARANCES REVOKED');
+    statusLogs = [`[CO-DJ] Rotated Co-DJ inject secret`, ...statusLogs.slice(0, 15)];
   }
 
   async function copyToClipboard(text: string, toastMsg: string) {
@@ -686,27 +714,40 @@
 
     mesh.onInjectAuthorized = (authorized) => {
       listenerCanInject = authorized;
+      if (stationCode && typeof window !== 'undefined' && window.location.hash.includes('?inject=')) {
+        history.replaceState(null, '', '#' + stationCode);
+      }
       if (authorized) {
         pushToast('success', 'CO-DJ INJECT CLEARANCE GRANTED');
         statusLogs = [`[CO-DJ] Clearance verified for station ${stationCode}`, ...statusLogs.slice(0, 15)];
       } else if (listenerInjectToken) {
-        pushToast('warning', 'CO-DJ INJECT KEY REJECTED');
+        listenerInjectToken = '';
+        pushToast('warning', 'CO-DJ INJECT KEY REJECTED OR REVOKED');
       }
     };
 
     mesh.onInjectTrackInit = (fromPeerId, manifest) => {
-      if (!manifest?.trackId || !manifest.totalChunks) return;
-      if (findDuplicateManifest(manifest)) {
-        statusLogs = [`[CO-DJ] Ignored duplicate "${manifest.title}" from ${fromPeerId}`, ...statusLogs.slice(0, 15)];
+      const safeManifest = sanitizeTrackManifest(manifest);
+      if (!safeManifest) return;
+      if (trackManifests.has(safeManifest.trackId) || pendingInjectedTracks.has(safeManifest.trackId)) {
+        statusLogs = [`[CO-DJ] Rejected colliding trackId "${safeManifest.trackId}" from ${fromPeerId}`, ...statusLogs.slice(0, 15)];
         return;
       }
-      pendingInjectedTracks.set(manifest.trackId, {
-        manifest,
-        chunks: new Array(manifest.totalChunks).fill(null),
+      if (pendingInjectedTracks.size >= 5) {
+        statusLogs = [`[CO-DJ] Rejected "${safeManifest.title}" from ${fromPeerId}: too many pending uploads`, ...statusLogs.slice(0, 15)];
+        return;
+      }
+      if (findDuplicateManifest(safeManifest)) {
+        statusLogs = [`[CO-DJ] Ignored duplicate "${safeManifest.title}" from ${fromPeerId}`, ...statusLogs.slice(0, 15)];
+        return;
+      }
+      pendingInjectedTracks.set(safeManifest.trackId, {
+        manifest: safeManifest,
+        chunks: new Array(safeManifest.totalChunks).fill(null),
         receivedCount: 0,
         fromPeerId
       });
-      statusLogs = [`[CO-DJ] Receiving "${manifest.title}" from ${fromPeerId} (${manifest.totalChunks} chunks)`, ...statusLogs.slice(0, 15)];
+      statusLogs = [`[CO-DJ] Receiving "${safeManifest.title}" from ${fromPeerId} (${safeManifest.totalChunks} chunks)`, ...statusLogs.slice(0, 15)];
     };
 
     mesh.onInjectedChunkReceived = (trackId, chunkIndex, totalChunks, data) => {
@@ -920,6 +961,7 @@
       duration: encodedMeta.duration || origMeta.duration
     };
     const trackId = 't_' + Math.random().toString(36).substring(2, 9);
+    const chunkHashes = await computeChunkHashes(file, CHUNK_SIZE);
     const manifest: TrackManifest = {
       trackId,
       title: meta.title,
@@ -930,6 +972,7 @@
       totalSize: meta.sizeBytes,
       totalChunks: Math.ceil(meta.sizeBytes / CHUNK_SIZE),
       coverDataUrl: meta.coverUrl,
+      ...(chunkHashes.length > 0 ? { chunkHashes } : {})
     };
 
     return { file, manifest };
@@ -1170,7 +1213,8 @@
       for (const [id, m] of trackManifests.entries()) {
         manifestObj[id] = m;
       }
-      mesh.hostStation(stationCode, manifestObj, playlist, isPublicStation, injectSecret);
+      const hostToken = getOrCreateHostToken(stationCode);
+      mesh.hostStation(stationCode, manifestObj, playlist, isPublicStation, injectSecret, hostToken);
       myPeerId = mesh.peerId;
     } catch (e) {
       console.error("Error hosting station:", e);
@@ -1461,8 +1505,11 @@
 
     if (state.trackManifests) {
       for (const [id, m] of Object.entries(state.trackManifests)) {
-        trackManifests.set(id, m);
-        player?.registerManifest(m);
+        const safeManifest = sanitizeTrackManifest(m);
+        if (safeManifest && safeManifest.trackId === id) {
+          trackManifests.set(id, safeManifest);
+          player?.registerManifest(safeManifest);
+        }
       }
     }
 
@@ -2019,7 +2066,15 @@
                     <circle cx="7.5" cy="15.5" r="4.5" />
                     <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" />
                   </svg>
-                  <span>COPY INJECT LINK [{injectSecret.slice(0, 4).toUpperCase()}]</span>
+                  <span>COPY INJECT LINK</span>
+                </button>
+                <button
+                  type="button"
+                  class="uplink-code-btn codj-rotate-btn"
+                  onclick={rotateCoDjSecret}
+                  title="Revoke existing Co-DJ invite links and generate a new secret"
+                >
+                  <span>ROTATE KEY</span>
                 </button>
               {/if}
               <button
@@ -5000,6 +5055,17 @@
   .codj-key-btn:hover {
     border-color: #39ff6a;
     color: #39ff6a;
+  }
+
+  .codj-rotate-btn {
+    border-color: rgba(255, 42, 77, 0.45);
+    color: #ff6b82;
+  }
+
+  .codj-rotate-btn:hover {
+    border-color: #ff2a4d;
+    color: #ffffff;
+    background: rgba(255, 42, 77, 0.2);
   }
 
   .codj-card {

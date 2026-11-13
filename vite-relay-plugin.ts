@@ -25,6 +25,19 @@ interface RelayClient {
   conn: RelayConnection;
 }
 
+const DJ_GRACE_MS = 25_000;
+const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+const MAX_BINARY_BYTES = 256 * 1024;
+const MAX_TEXT_MSGS_PER_SEC = 200;
+const MAX_BINARY_MSGS_PER_SEC = 600;
+const STATION_ID_RE = /^[a-z0-9_-]{1,36}$/;
+const LISTENER_PEER_ID_RE = /^[a-zA-Z0-9_-]{3,32}$/;
+const RESERVED_STATIONS = new Set(['__directory__', 'global']);
+
+function encodePadded32Buf(str: string): Buffer {
+  return Buffer.from(str.padEnd(32, ' '), 'utf8').subarray(0, 32);
+}
+
 function encodeWsFrame(opcode: number, payload: Buffer): Buffer {
   const len = payload.byteLength;
   let header: Buffer;
@@ -163,13 +176,21 @@ function attachWebSocketHandler(
 export function p2pRelayPlugin(): Plugin {
   const clientsByPeerId = new Map<string, RelayClient>();
   const stations = new Map<string, Set<string>>(); // stationId -> Set of peerIds
+  const djGraceByStation = new Map<string, { hostToken: string; expiresAt: number }>();
 
   function setupWebSocketServer(httpServer: any) {
     if (!httpServer) return;
 
     httpServer.on('upgrade', (request: IncomingMessage, socket: Duplex) => {
-      const url = request.url || '';
-      if (!url.startsWith('/__p2p_relay')) return;
+      const rawUrl = request.url || '';
+      if (!rawUrl.startsWith('/__p2p_relay')) return;
+
+      const parsedUrl = new URL(rawUrl, 'http://localhost');
+      const boundStationId = (parsedUrl.searchParams.get('station') || '').toLowerCase().trim();
+      if (boundStationId && (RESERVED_STATIONS.has(boundStationId) || !STATION_ID_RE.test(boundStationId))) {
+        socket.destroy();
+        return;
+      }
 
       const key = request.headers['sec-websocket-key'];
       if (!key || typeof key !== 'string') {
@@ -193,38 +214,68 @@ export function p2pRelayPlugin(): Plugin {
 
       let registeredPeerId: string | null = null;
       let registeredStationId: string | null = null;
+      let textCount = 0;
+      let textResetAt = Date.now() + 1000;
+      let binCount = 0;
+      let binResetAt = Date.now() + 1000;
 
       const conn = attachWebSocketHandler(
         socket,
         (rawData: Buffer, isBinary: boolean) => {
           try {
+            const now = Date.now();
             if (isBinary) {
+              if (now >= binResetAt) {
+                binCount = 0;
+                binResetAt = now + 1000;
+              }
+              if (++binCount > MAX_BINARY_MSGS_PER_SEC) {
+                try { socket.end(); } catch {}
+                return;
+              }
               // Binary frame format:
               // [0..31]: targetPeerId (32 bytes UTF-8 padded with spaces, or '*' for station broadcast)
-              // [32..63]: fromPeerId (32 bytes UTF-8 padded with spaces)
+              // [32..63]: fromPeerId (32 bytes UTF-8 padded with spaces, overwritten from server identity)
               // [64..]: payload (e.g. 40-byte chunk header + audio bytes)
-              if (rawData.byteLength < 64) return;
-              const targetPeerId = rawData.subarray(0, 32).toString('utf8').trim();
+              if (rawData.byteLength < 64 || rawData.byteLength > MAX_BINARY_BYTES) return;
+              if (!registeredPeerId || !registeredStationId) return;
+
+              const outFrame = Buffer.from(rawData);
+              encodePadded32Buf(registeredPeerId).copy(outFrame, 32);
+
+              const targetPeerId = outFrame.subarray(0, 32).toString('utf8').trim();
+              if (!targetPeerId) return;
 
               if (targetPeerId === '*') {
-                if (registeredStationId && stations.has(registeredStationId)) {
-                  for (const memberId of stations.get(registeredStationId)!) {
+                const stationSet = stations.get(registeredStationId);
+                if (stationSet) {
+                  for (const memberId of stationSet) {
                     if (memberId !== registeredPeerId) {
                       const targetClient = clientsByPeerId.get(memberId);
-                      if (targetClient && targetClient.conn.isOpen) {
-                        targetClient.conn.sendBinary(rawData);
+                      if (targetClient && targetClient.stationId === registeredStationId && targetClient.conn.isOpen) {
+                        targetClient.conn.sendBinary(outFrame);
                       }
                     }
                   }
                 }
               } else {
                 const targetClient = clientsByPeerId.get(targetPeerId);
-                if (targetClient && targetClient.conn.isOpen) {
-                  targetClient.conn.sendBinary(rawData);
+                if (targetClient && targetClient.stationId === registeredStationId && targetClient.conn.isOpen) {
+                  targetClient.conn.sendBinary(outFrame);
                 }
               }
               return;
             }
+
+            if (now >= textResetAt) {
+              textCount = 0;
+              textResetAt = now + 1000;
+            }
+            if (++textCount > MAX_TEXT_MSGS_PER_SEC) {
+              try { socket.end(); } catch {}
+              return;
+            }
+            if (rawData.byteLength > MAX_TEXT_BYTES) return;
 
             const text = rawData.toString('utf8');
             const msg = JSON.parse(text);
@@ -232,16 +283,57 @@ export function p2pRelayPlugin(): Plugin {
             if (msg.type === 'register') {
               const peerId = String(msg.peerId || '').trim();
               const stationId = String(msg.stationId || '').toLowerCase().trim();
-              const role = msg.role === 'dj' ? 'dj' : 'listener';
+              const role: 'dj' | 'listener' = msg.role === 'dj' ? 'dj' : 'listener';
               const hostToken = typeof msg.hostToken === 'string' ? msg.hostToken.trim() : '';
-              if (!peerId || !stationId) return;
+
+              if (!peerId || !stationId || !STATION_ID_RE.test(stationId) || RESERVED_STATIONS.has(stationId)) {
+                try { socket.end(); } catch {}
+                return;
+              }
+              if (boundStationId && boundStationId !== stationId) {
+                conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'station_mismatch', stationId }));
+                try { socket.end(); } catch {}
+                return;
+              }
+              if (registeredPeerId && (registeredPeerId !== peerId || registeredStationId !== stationId)) {
+                try { socket.end(); } catch {}
+                return;
+              }
 
               const djPeerId = `station-${stationId}-dj`;
               const isIncomingDj = role === 'dj' || peerId === djPeerId;
-              const existing = clientsByPeerId.get(djPeerId);
-              if (isIncomingDj && existing && existing.conn.isOpen) {
-                if (!hostToken || existing.hostToken !== hostToken) {
+
+              if (isIncomingDj) {
+                if (peerId !== djPeerId || hostToken.length < 16) {
+                  conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'invalid_dj_credentials', stationId }));
+                  try { socket.end(); } catch {}
+                  return;
+                }
+                const existingDj = clientsByPeerId.get(djPeerId);
+                if (existingDj && existingDj.conn.isOpen && existingDj.hostToken !== hostToken) {
                   conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'station_in_use', stationId }));
+                  try { socket.end(); } catch {}
+                  return;
+                }
+                const grace = djGraceByStation.get(stationId);
+                if (grace && Date.now() < grace.expiresAt && grace.hostToken !== hostToken) {
+                  conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'station_in_use', stationId }));
+                  try { socket.end(); } catch {}
+                  return;
+                }
+                djGraceByStation.delete(stationId);
+                if (existingDj && existingDj.conn !== conn && existingDj.hostToken === hostToken) {
+                  try { existingDj.conn.socket.end(); } catch {}
+                }
+              } else {
+                if (!LISTENER_PEER_ID_RE.test(peerId) || peerId.startsWith('station-') || peerId.endsWith('-dj')) {
+                  conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'invalid_peer_id', stationId }));
+                  try { socket.end(); } catch {}
+                  return;
+                }
+                const existingPeer = clientsByPeerId.get(peerId);
+                if (existingPeer && existingPeer.conn !== conn && existingPeer.conn.isOpen) {
+                  conn.sendText(JSON.stringify({ type: 'register_rejected', reason: 'peer_id_in_use', stationId }));
                   try { socket.end(); } catch {}
                   return;
                 }
@@ -258,9 +350,8 @@ export function p2pRelayPlugin(): Plugin {
               clientsByPeerId.set(peerId, {
                 peerId,
                 stationId,
-                role,
-                hostToken: hostToken || undefined,
-                ...(isIncomingDj ? { isPublic, trackTitle } : {}),
+                role: isIncomingDj ? 'dj' : 'listener',
+                ...(isIncomingDj ? { hostToken, isPublic, trackTitle } : {}),
                 conn
               });
               if (!stations.has(stationId)) {
@@ -274,16 +365,19 @@ export function p2pRelayPlugin(): Plugin {
                 stationId
               }));
             } else if (msg.type === 'signal' || msg.type === 'relay_control') {
+              if (!registeredPeerId || !registeredStationId) return;
               const targetPeerId = String(msg.to || '').trim();
-              const fromPeerId = registeredPeerId || String(msg.from || '').trim();
+              if (!targetPeerId) return;
+              const fromPeerId = registeredPeerId;
 
               if (targetPeerId === '*') {
-                if (registeredStationId && stations.has(registeredStationId)) {
+                const stationSet = stations.get(registeredStationId);
+                if (stationSet) {
                   const out = JSON.stringify({ ...msg, from: fromPeerId });
-                  for (const memberId of stations.get(registeredStationId)!) {
+                  for (const memberId of stationSet) {
                     if (memberId !== fromPeerId) {
                       const c = clientsByPeerId.get(memberId);
-                      if (c && c.conn.isOpen) {
+                      if (c && c.stationId === registeredStationId && c.conn.isOpen) {
                         c.conn.sendText(out);
                       }
                     }
@@ -291,7 +385,7 @@ export function p2pRelayPlugin(): Plugin {
                 }
               } else {
                 const targetClient = clientsByPeerId.get(targetPeerId);
-                if (targetClient && targetClient.conn.isOpen) {
+                if (targetClient && targetClient.stationId === registeredStationId && targetClient.conn.isOpen) {
                   targetClient.conn.sendText(JSON.stringify({
                     ...msg,
                     from: fromPeerId
@@ -304,11 +398,10 @@ export function p2pRelayPlugin(): Plugin {
                 }
               }
             } else if (msg.type === 'ping') {
-              if (registeredPeerId) {
-                const c = clientsByPeerId.get(registeredPeerId);
-                if (c && c.role === 'dj' && typeof msg.trackTitle === 'string') {
-                  c.trackTitle = msg.trackTitle.trim().slice(0, 120) || undefined;
-                }
+              if (!registeredPeerId || !registeredStationId) return;
+              const c = clientsByPeerId.get(registeredPeerId);
+              if (c && c.role === 'dj' && typeof msg.trackTitle === 'string') {
+                c.trackTitle = msg.trackTitle.trim().slice(0, 120) || undefined;
               }
               conn.sendText(JSON.stringify({ type: 'pong' }));
             }
@@ -325,7 +418,24 @@ export function p2pRelayPlugin(): Plugin {
                 const set = stations.get(registeredStationId)!;
                 set.delete(registeredPeerId);
                 const djPeerId = `station-${registeredStationId}-dj`;
-                if (registeredPeerId !== djPeerId) {
+                if (registeredPeerId === djPeerId) {
+                  if (existing.hostToken) {
+                    djGraceByStation.set(registeredStationId, {
+                      hostToken: existing.hostToken,
+                      expiresAt: Date.now() + DJ_GRACE_MS
+                    });
+                  }
+                  const disconnectMsg = JSON.stringify({
+                    type: 'relay_dj_disconnected',
+                    stationId: registeredStationId
+                  });
+                  for (const memberId of set) {
+                    const member = clientsByPeerId.get(memberId);
+                    if (member && member.conn.isOpen) {
+                      member.conn.sendText(disconnectMsg);
+                    }
+                  }
+                } else {
                   const djClient = clientsByPeerId.get(djPeerId);
                   if (djClient && djClient.conn.isOpen) {
                     djClient.conn.sendText(JSON.stringify({

@@ -9,7 +9,59 @@
 //   3. Zero router port forwarding or manual TURN server setup required!
 
 import Peer, { type DataConnection } from 'peerjs';
-import type { TrackManifest } from './chunk-pipeline';
+import { sha256Base64, sanitizeTrackManifest, type TrackManifest } from './chunk-pipeline';
+
+const TRACK_ID_RE = /^[a-zA-Z0-9_-]{3,32}$/;
+
+function stableStringify(val: unknown): string {
+  if (val === null || typeof val !== 'object') {
+    return JSON.stringify(val);
+  }
+  if (Array.isArray(val)) {
+    return '[' + val.map((item) => (item === undefined ? 'null' : stableStringify(item))).join(',') + ']';
+  }
+  const obj = val as Record<string, unknown>;
+  const keys = Object.keys(obj).filter((k) => obj[k] !== undefined).sort();
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  return btoa(bin);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    out[i] = bin.charCodeAt(i);
+  }
+  return out;
+}
+
+function extractSignablePayload(msg: Record<string, unknown>): Record<string, unknown> {
+  return {
+    type: msg.type,
+    ...(msg.parentId !== undefined ? { parentId: msg.parentId } : {}),
+    ...(msg.depth !== undefined ? { depth: msg.depth } : {}),
+    ...(msg.state !== undefined ? { state: msg.state } : {}),
+    ...(msg.tree !== undefined ? { tree: msg.tree } : {}),
+    ...(msg.authorized !== undefined ? { authorized: msg.authorized } : {}),
+    ...(msg.trackId !== undefined ? { trackId: msg.trackId } : {})
+  };
+}
 
 export interface PeerNodeInfo {
   peerId: string;
@@ -114,6 +166,21 @@ export class P2PMesh {
   private injectSecret = '';
   private listenerInjectToken = '';
   private authorizedInjectors = new Set<string>();
+  private injectFailCounts = new Map<string, number>();
+  private authorizedTrackSenders = new Map<string, string>();
+  private pendingInjectManifests = new Map<string, TrackManifest>();
+  private parentReportCooldowns = new Map<string, number>();
+  private inFlightChunkKeys = new Set<string>();
+  private assignedParentId: string | null = null;
+
+  // Ephemeral ECDSA P-256 session signing (DJ -> listeners)
+  private djSigningKeyPair: CryptoKeyPair | null = null;
+  private djPublicJwk: JsonWebKey | null = null;
+  private djKeyReadyPromise: Promise<void> = Promise.resolve();
+  private controlSendQueue: Promise<void> = Promise.resolve();
+  private pinnedDjVerifyKey: CryptoKey | null = null;
+  private pinnedDjJwkCanonical = '';
+  private listenerVerifyQueue: Promise<void> = Promise.resolve();
 
   private getCurrentTrackTitle(): string {
     const id = this.stationState?.currentTrackId;
@@ -183,7 +250,8 @@ export class P2PMesh {
     initialManifests: Record<string, TrackManifest>,
     playlistOrder: string[],
     isPublic = true,
-    injectSecret = ''
+    injectSecret = '',
+    persistedHostToken = ''
   ) {
     const cleanStationId = stationId.toLowerCase().trim();
     this.stationId = cleanStationId;
@@ -191,11 +259,20 @@ export class P2PMesh {
     this.isPublicBroadcast = isPublic;
     this.injectSecret = injectSecret;
     this.authorizedInjectors.clear();
+    this.injectFailCounts.clear();
+    this.authorizedTrackSenders.clear();
+    this.pendingInjectManifests.clear();
+    this.parentReportCooldowns.clear();
     this.depth = 0;
     this.currentParentId = null;
-    this.hostToken = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    this.assignedParentId = null;
+    this.hostToken = persistedHostToken.trim().length >= 16
+      ? persistedHostToken.trim()
+      : (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2) + Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+    this.initDjSigningKeys();
 
     const djPeerId = `station-${cleanStationId}-dj`;
     this.peerId = djPeerId;
@@ -229,6 +306,65 @@ export class P2PMesh {
     this.initPeer(djPeerId);
   }
 
+  private initDjSigningKeys() {
+    this.djSigningKeyPair = null;
+    this.djPublicJwk = null;
+    this.controlSendQueue = Promise.resolve();
+    if (typeof crypto === 'undefined' || !crypto.subtle) {
+      this.djKeyReadyPromise = Promise.resolve();
+      return;
+    }
+    this.djKeyReadyPromise = crypto.subtle
+      .generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'])
+      .then(async (kp) => {
+        this.djSigningKeyPair = kp;
+        this.djPublicJwk = await crypto.subtle.exportKey('jwk', kp.publicKey);
+      })
+      .catch(() => {
+        this.djSigningKeyPair = null;
+        this.djPublicJwk = null;
+      });
+  }
+
+  private enqueueSignedDjDispatch(sendFn: (signedMsg: any) => void, msg: Record<string, unknown>) {
+    this.controlSendQueue = this.controlSendQueue.then(async () => {
+      await this.djKeyReadyPromise;
+      if (!this.djSigningKeyPair || !this.djPublicJwk || typeof crypto === 'undefined' || !crypto.subtle) {
+        sendFn(msg);
+        return;
+      }
+      try {
+        const canonical = stableStringify(extractSignablePayload(msg));
+        const encoded = new TextEncoder().encode(canonical);
+        const sigBuf = await crypto.subtle.sign(
+          { name: 'ECDSA', hash: 'SHA-256' },
+          this.djSigningKeyPair.privateKey,
+          encoded
+        );
+        sendFn({
+          ...msg,
+          djPubJwk: this.djPublicJwk,
+          djSig: bytesToBase64(new Uint8Array(sigBuf))
+        });
+      } catch {
+        sendFn(msg);
+      }
+    });
+  }
+
+  public rotateInjectSecret(newSecret: string) {
+    if (!this.isDJ) return;
+    const prevInjectors = Array.from(this.authorizedInjectors);
+    this.injectSecret = newSecret;
+    this.authorizedInjectors.clear();
+    this.injectFailCounts.clear();
+    this.authorizedTrackSenders.clear();
+    this.pendingInjectManifests.clear();
+    for (const peerId of prevInjectors) {
+      this.sendControlToListener(peerId, { type: 'inject_authorized', authorized: false });
+    }
+  }
+
   // --- 2. Listener Mode: Join Station ---
 
   public joinStation(stationId: string, injectToken = '') {
@@ -236,6 +372,10 @@ export class P2PMesh {
     this.isDJ = false;
     this.hasJoinedPyramid = false;
     this.listenerInjectToken = injectToken.trim();
+    this.pinnedDjVerifyKey = null;
+    this.pinnedDjJwkCanonical = '';
+    this.assignedParentId = null;
+    this.listenerVerifyQueue = Promise.resolve();
 
     const listenerId = 'peer_' + Math.random().toString(36).substring(2, 9);
     this.peerId = listenerId;
@@ -280,6 +420,8 @@ export class P2PMesh {
 
   public notifyInjectComplete(peerId: string, trackId: string) {
     if (!this.isDJ) return;
+    this.authorizedTrackSenders.delete(trackId);
+    this.pendingInjectManifests.delete(trackId);
     this.sendControlToListener(peerId, { type: 'inject_track_complete', trackId });
   }
 
@@ -466,13 +608,19 @@ export class P2PMesh {
 
   private handleRelayBinaryFrame(frameBuffer: ArrayBuffer) {
     if (frameBuffer.byteLength < 64 + 40) return;
+    const fromPeerId = new TextDecoder().decode(new Uint8Array(frameBuffer, 32, 32)).trim();
     const chunkPacket = frameBuffer.slice(64);
-    this.handleBinaryChunk(chunkPacket);
+    this.handleBinaryChunk(chunkPacket, fromPeerId);
   }
 
   private handleRelayControlFrame(msg: any) {
     if (msg.type === 'register_rejected') {
       const rejectedStation = msg.stationId || this.stationId || '';
+      if (msg.reason === 'peer_id_in_use') {
+        this.peerId = 'peer_' + Math.random().toString(36).substring(2, 9);
+        this.relayWs?.close();
+        return;
+      }
       this.log(`🚨 Station "${rejectedStation}" is already hosted by another DJ! Connection rejected.`);
       this.relayFailures = 999;
       this.relayEverConnected = false;
@@ -485,7 +633,10 @@ export class P2PMesh {
       this.log(`🚨 DJ disconnected from station "${msg.stationId}".`);
       this.hasJoinedPyramid = false;
       this.currentParentId = null;
+      this.assignedParentId = null;
       this.usingRelayForParentStream = false;
+      this.pinnedDjVerifyKey = null;
+      this.pinnedDjJwkCanonical = '';
       return;
     }
 
@@ -502,8 +653,11 @@ export class P2PMesh {
     }
 
     if (msg.type !== 'relay_control' || !msg.payload) return;
-    const fromId = msg.from;
+    const fromId = typeof msg.from === 'string' ? msg.from.trim() : '';
+    if (!fromId) return;
     const data = msg.payload;
+    if (!data || typeof data !== 'object') return;
+    const djPeerId = `station-${this.stationId}-dj`;
 
     if (this.isDJ) {
       // DJ receiving control or stream requests from a listener over the relay
@@ -517,23 +671,20 @@ export class P2PMesh {
       ) {
         this.handleListenerRequestToDJ(fromId, data);
       } else {
-        if (data.forceRelay) {
+        const node = this.masterTreeMap.get(fromId);
+        if (!node) return;
+        if (data.forceRelay && node.parent === this.peerId) {
           this.dropWebRtcChildStream(fromId);
         }
-        // Stream channel messages (e.g. request_audio_chunks, link_ping, child_departing)
-        // Only register as a relay child if the DJ topology actually assigned this peer as our direct child.
-        const node = this.masterTreeMap.get(fromId);
-        if (node) {
-          node.lastHeartbeat = Date.now();
-          if (node.parent === this.peerId) {
-            this.relayChildrenIds.add(fromId);
-            this.childrenIds.add(fromId);
-          }
+        node.lastHeartbeat = Date.now();
+        if (node.parent === this.peerId) {
+          this.relayChildrenIds.add(fromId);
+          this.childrenIds.add(fromId);
         }
         this.handleStreamData(data, fromId);
       }
     } else {
-      // Listener receiving control directives from DJ or stream messages from parent/child
+      // Listener receiving control directives ONLY from the station DJ or stream messages from assigned parent/child
       if (
         data.type === 'dj_assignment' ||
         data.type === 'master_tree_update' ||
@@ -542,8 +693,11 @@ export class P2PMesh {
         data.type === 'inject_authorized' ||
         data.type === 'inject_track_complete'
       ) {
+        if (fromId !== djPeerId) return;
         this.handleDJControlMessage(data);
       } else if (data.type === 'relay_stream_ready') {
+        const expectedParent = this.assignedParentId || this.currentParentId || this.masterTreeMap.get(this.peerId)?.parent;
+        if (fromId !== expectedParent) return;
         // Parent confirmed stream bridge over relay!
         if (!this.parentDataConn || !this.parentDataConn.open) {
           this.usingRelayForParentStream = true;
@@ -553,6 +707,8 @@ export class P2PMesh {
           this.sendViaRelay(fromId, { type: 'request_audio_chunks', from: this.peerId });
         }
       } else if (data.type === 'request_relay_stream') {
+        const requesterNode = this.masterTreeMap.get(fromId);
+        if (requesterNode && requesterNode.parent !== this.peerId) return;
         // A child is connecting to us over the Universal Relay
         this.dropWebRtcChildStream(fromId);
         this.relayChildrenIds.add(fromId);
@@ -560,7 +716,8 @@ export class P2PMesh {
         this.log(`Data stream bridged with child ${fromId} (Universal Relay)`);
         this.sendViaRelay(fromId, { type: 'relay_stream_ready', from: this.peerId });
       } else {
-        if (data.forceRelay) {
+        const requesterNode = this.masterTreeMap.get(fromId);
+        if (data.forceRelay && requesterNode?.parent === this.peerId) {
           this.dropWebRtcChildStream(fromId);
           this.relayChildrenIds.add(fromId);
           this.childrenIds.add(fromId);
@@ -725,6 +882,7 @@ export class P2PMesh {
     });
 
     conn.on('data', (data: any) => {
+      if (this.djControlConn !== conn && conn.peer !== djPeerId) return;
       this.handleDJControlMessage(data);
     });
 
@@ -785,10 +943,10 @@ export class P2PMesh {
       const role = conn.metadata?.role;
       if (this.isDJ && role === 'control_channel') {
         if (data instanceof ArrayBuffer) {
-          this.handleBinaryChunk(data);
+          this.handleBinaryChunk(data, remoteId);
         } else if (ArrayBuffer.isView(data)) {
           const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-          this.handleBinaryChunk(buf);
+          this.handleBinaryChunk(buf, remoteId);
         } else {
           this.handleListenerRequestToDJ(remoteId, data);
         }
@@ -851,6 +1009,8 @@ export class P2PMesh {
 
   // Handle listener control messages sent to the DJ (via either WebRTC or Relay)
   private handleListenerRequestToDJ(newcomerId: string, data: any) {
+    if (!data || typeof data !== 'object') return;
+
     if (data.type === 'request_join_pyramid') {
       const isRelay = !!data.viaRelay && (!this.allListenerConns.get(newcomerId)?.open);
       this.assignNewcomerToPyramid(newcomerId, isRelay ? 'relay' : 'webrtc');
@@ -859,9 +1019,10 @@ export class P2PMesh {
       if (node) {
         const prevPct = node.bufferPct ?? 0;
         node.lastHeartbeat = Date.now();
-        if (typeof data.bufferPct === 'number') {
-          node.bufferPct = data.bufferPct;
-          if (data.bufferPct >= 100 && prevPct < 100) {
+        if (typeof data.bufferPct === 'number' && Number.isFinite(data.bufferPct)) {
+          const clampedPct = Math.max(0, Math.min(100, Math.round(data.bufferPct)));
+          node.bufferPct = clampedPct;
+          if (clampedPct >= 100 && prevPct < 100) {
             this.broadcastTreeTopology();
           }
         }
@@ -872,29 +1033,75 @@ export class P2PMesh {
       this.childrenIds.delete(newcomerId);
       this.handleListenerDeparted(newcomerId);
     } else if (data.type === 'parent_unresponsive') {
-      this.log(`[DJ Orchestrator] Peer ${newcomerId} reported parent ${data.deadParentId} unresponsive! Re-assigning...`);
-      if (data.deadParentId && data.deadParentId !== this.peerId) {
-        this.handleListenerDeparted(data.deadParentId);
+      const now = Date.now();
+      const lastReport = this.parentReportCooldowns.get(newcomerId) || 0;
+      if (now - lastReport < 4000) return;
+      this.parentReportCooldowns.set(newcomerId, now);
+
+      // Only act on the caller's actual assigned parent in masterTreeMap; never let peers evict arbitrary nodes
+      const callerNode = this.masterTreeMap.get(newcomerId);
+      if (!callerNode) return;
+      const actualParentId = callerNode.parent;
+
+      if (actualParentId && actualParentId !== this.peerId) {
+        const parentNode = this.masterTreeMap.get(actualParentId);
+        const parentConn = this.allListenerConns.get(actualParentId);
+        const isParentStale = !parentNode || (!(parentConn && parentConn.open) && now - parentNode.lastHeartbeat > 12000);
+        if (isParentStale) {
+          this.log(`[DJ Orchestrator] Parent ${actualParentId} timed out after report from ${newcomerId}; pruning stale parent.`);
+          this.handleListenerDeparted(actualParentId);
+        } else {
+          // Parent is still alive; re-assign only the reporting caller cleanly without kicking parent
+          this.log(`[DJ Orchestrator] Re-routing ${newcomerId} away from ${actualParentId}`);
+          parentNode.children = parentNode.children.filter((id) => id !== newcomerId);
+          callerNode.parent = null;
+          this.assignNewcomerToPyramid(newcomerId, callerNode.transport || 'relay');
+        }
       } else {
-        const existing = this.masterTreeMap.get(newcomerId);
-        this.assignNewcomerToPyramid(newcomerId, existing?.transport || 'relay');
+        this.assignNewcomerToPyramid(newcomerId, callerNode.transport || 'relay');
       }
     } else if (data.type === 'verify_inject') {
-      const ok = Boolean(this.injectSecret && typeof data.token === 'string' && data.token === this.injectSecret);
+      const failures = this.injectFailCounts.get(newcomerId) ?? 0;
+      if (failures >= 5) return;
+
+      const token = typeof data.token === 'string' ? data.token : '';
+      const ok = Boolean(this.injectSecret && token && constantTimeEqual(token, this.injectSecret));
       if (ok) {
+        this.injectFailCounts.delete(newcomerId);
         this.authorizedInjectors.add(newcomerId);
         this.log(`[CO-DJ] Authorized peer ${newcomerId} for track injection`);
+      } else {
+        this.injectFailCounts.set(newcomerId, failures + 1);
+        this.authorizedInjectors.delete(newcomerId);
       }
       this.sendControlToListener(newcomerId, { type: 'inject_authorized', authorized: ok });
     } else if (data.type === 'inject_track_init') {
-      const ok = Boolean(
-        this.injectSecret &&
-        (this.authorizedInjectors.has(newcomerId) || (typeof data.token === 'string' && data.token === this.injectSecret))
+      const failures = this.injectFailCounts.get(newcomerId) ?? 0;
+      if (failures >= 5) return;
+
+      const token = typeof data.token === 'string' ? data.token : '';
+      const tokenMatches = Boolean(this.injectSecret && token && constantTimeEqual(token, this.injectSecret));
+      const isAuthorized = Boolean(
+        this.injectSecret && (this.authorizedInjectors.has(newcomerId) || tokenMatches)
       );
-      if (ok && data.manifest?.trackId) {
-        this.authorizedInjectors.add(newcomerId);
-        this.onInjectTrackInit?.(newcomerId, data.manifest as TrackManifest);
+      if (!isAuthorized) {
+        this.injectFailCounts.set(newcomerId, failures + 1);
+        return;
       }
+
+      const safeManifest = sanitizeTrackManifest(data.manifest);
+      if (!safeManifest) return;
+      if (
+        this.stationState?.trackManifests?.[safeManifest.trackId] ||
+        this.authorizedTrackSenders.has(safeManifest.trackId)
+      ) {
+        return;
+      }
+
+      this.authorizedInjectors.add(newcomerId);
+      this.authorizedTrackSenders.set(safeManifest.trackId, newcomerId);
+      this.pendingInjectManifests.set(safeManifest.trackId, safeManifest);
+      this.onInjectTrackInit?.(newcomerId, safeManifest);
     }
   }
 
@@ -973,15 +1180,17 @@ export class P2PMesh {
     }
   }
 
-  private sendControlToListener(listenerId: string, payload: any) {
-    const conn = this.allListenerConns.get(listenerId);
-    if (conn && conn.open && this.canSendControlViaWebRTC(payload)) {
-      try {
-        conn.send(payload);
-        return;
-      } catch {}
-    }
-    this.sendViaRelay(listenerId, payload);
+  private sendControlToListener(listenerId: string, payload: Record<string, unknown>) {
+    this.enqueueSignedDjDispatch((signedPayload) => {
+      const conn = this.allListenerConns.get(listenerId);
+      if (conn && conn.open && this.canSendControlViaWebRTC(signedPayload)) {
+        try {
+          conn.send(signedPayload);
+          return;
+        } catch {}
+      }
+      this.sendViaRelay(listenerId, signedPayload);
+    }, payload);
   }
 
   // DJ Self-Healing: Re-balance when any peer drops out
@@ -1019,17 +1228,117 @@ export class P2PMesh {
 
   // --- 6. Listener Handling of DJ Directives ---
 
+  private sanitizeIncomingState(rawState: any): StationState | null {
+    if (!rawState || typeof rawState !== 'object') return null;
+    if (typeof rawState.stationId !== 'string' || rawState.stationId.toLowerCase().trim() !== this.stationId) {
+      return null;
+    }
+    const cleanManifests: Record<string, TrackManifest> = {};
+    if (rawState.trackManifests && typeof rawState.trackManifests === 'object') {
+      for (const [key, val] of Object.entries(rawState.trackManifests)) {
+        const sanitized = sanitizeTrackManifest(val);
+        if (sanitized && sanitized.trackId === key) {
+          cleanManifests[key] = sanitized;
+        }
+      }
+    }
+    const playlistOrder = Array.isArray(rawState.playlistOrder)
+      ? rawState.playlistOrder.filter((id: unknown): id is string => typeof id === 'string' && Boolean(cleanManifests[id]))
+      : [];
+    const currentTrackId = typeof rawState.currentTrackId === 'string' && cleanManifests[rawState.currentTrackId]
+      ? rawState.currentTrackId
+      : null;
+    const nextTrackId = typeof rawState.nextTrackId === 'string' && cleanManifests[rawState.nextTrackId]
+      ? rawState.nextTrackId
+      : null;
+
+    return {
+      ...rawState,
+      stationId: this.stationId,
+      djPeerId: `station-${this.stationId}-dj`,
+      currentTrackId,
+      nextTrackId,
+      trackManifests: cleanManifests,
+      playlistOrder
+    };
+  }
+
+  private async verifyDjEnvelope(data: any): Promise<boolean> {
+    const hasSubtle = typeof crypto !== 'undefined' && Boolean(crypto.subtle);
+    const requireCrypto = typeof window !== 'undefined' && window.isSecureContext && hasSubtle;
+
+    if (!hasSubtle) return true;
+    if (!data?.djPubJwk || typeof data?.djSig !== 'string') {
+      return !requireCrypto && !this.pinnedDjVerifyKey;
+    }
+
+    try {
+      const jwk = data.djPubJwk as JsonWebKey;
+      if (jwk.kty !== 'EC' || jwk.crv !== 'P-256' || typeof jwk.x !== 'string' || typeof jwk.y !== 'string') {
+        return false;
+      }
+      const canonicalJwk = stableStringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y });
+      if (!this.pinnedDjVerifyKey) {
+        this.pinnedDjVerifyKey = await crypto.subtle.importKey(
+          'jwk',
+          { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y },
+          { name: 'ECDSA', namedCurve: 'P-256' },
+          false,
+          ['verify']
+        );
+        this.pinnedDjJwkCanonical = canonicalJwk;
+      } else if (canonicalJwk !== this.pinnedDjJwkCanonical) {
+        return false;
+      }
+
+      const canonicalPayload = stableStringify(extractSignablePayload(data));
+      const encodedPayload = new TextEncoder().encode(canonicalPayload);
+      const sigBytes = base64ToBytes(data.djSig);
+      return await crypto.subtle.verify(
+        { name: 'ECDSA', hash: 'SHA-256' },
+        this.pinnedDjVerifyKey,
+        sigBytes as BufferSource,
+        encodedPayload
+      );
+    } catch {
+      return false;
+    }
+  }
+
   private handleDJControlMessage(data: any) {
+    if (!data || typeof data !== 'object') return;
+
+    if (data.type === 'dj_station_closed') {
+      this.log('The DJ has closed the broadcast station.');
+      return;
+    }
+
+    this.listenerVerifyQueue = this.listenerVerifyQueue.then(async () => {
+      const valid = await this.verifyDjEnvelope(data);
+      if (!valid) {
+        console.warn('[P2P Mesh] Rejected unverified DJ control directive:', data.type);
+        return;
+      }
+      this.applyVerifiedDJControlMessage(data);
+    });
+  }
+
+  private applyVerifiedDJControlMessage(data: any) {
     if (data.type === 'dj_assignment') {
       this.hasJoinedPyramid = true;
       clearInterval(this.joinRetryTimer);
       this.joinRetryTimer = null;
       const { parentId, depth, state } = data;
+      if (typeof parentId !== 'string' || typeof depth !== 'number') return;
       this.depth = depth;
+      this.assignedParentId = parentId;
 
       if (state) {
-        this.stationState = state;
-        if (this.onStationStateUpdate) this.onStationStateUpdate(state);
+        const cleanState = this.sanitizeIncomingState(state);
+        if (cleanState) {
+          this.stationState = cleanState;
+          if (this.onStationStateUpdate) this.onStationStateUpdate(cleanState);
+        }
       }
 
       // Connect to assigned parent
@@ -1040,13 +1349,17 @@ export class P2PMesh {
         this.sendControlToDJ({ type: 'verify_inject', token: this.listenerInjectToken });
       }
     } else if (data.type === 'inject_authorized') {
-      this.onInjectAuthorized?.(Boolean(data.authorized));
+      const authorized = Boolean(data.authorized);
+      if (!authorized) {
+        this.listenerInjectToken = '';
+      }
+      this.onInjectAuthorized?.(authorized);
     } else if (data.type === 'inject_track_complete') {
       if (typeof data.trackId === 'string') {
         this.onInjectTrackComplete?.(data.trackId);
       }
     } else if (data.type === 'master_tree_update') {
-      if (data.tree) {
+      if (Array.isArray(data.tree)) {
         this.masterTreeMap = new Map(data.tree);
         this.notifyTreeChange();
         if (!this.isDJ && this.hasJoinedPyramid && !this.masterTreeMap.has(this.peerId)) {
@@ -1064,10 +1377,11 @@ export class P2PMesh {
         }
       }
     } else if (data.type === 'station_state') {
-      this.stationState = data.state;
-      if (this.onStationStateUpdate) this.onStationStateUpdate(data.state);
-    } else if (data.type === 'dj_station_closed') {
-      this.log('The DJ has closed the broadcast station.');
+      const cleanState = this.sanitizeIncomingState(data.state);
+      if (cleanState) {
+        this.stationState = cleanState;
+        if (this.onStationStateUpdate) this.onStationStateUpdate(cleanState);
+      }
     }
   }
 
@@ -1447,28 +1761,51 @@ export class P2PMesh {
       const buffer = (data instanceof Uint8Array
         ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
         : data) as ArrayBuffer;
-      this.handleBinaryChunk(buffer);
+      void this.handleBinaryChunk(buffer, fromPeerId);
       return;
     }
     if (typeof Blob !== 'undefined' && data instanceof Blob) {
-      data.arrayBuffer().then((buffer) => this.handleBinaryChunk(buffer)).catch(() => {});
+      data.arrayBuffer().then((buffer) => this.handleBinaryChunk(buffer, fromPeerId)).catch(() => {});
       return;
     }
 
     // 2. Control/Heartbeat message handling over Stream Channel
     if (typeof data === 'object' && data !== null) {
       if (data.type === 'request_audio_chunks') {
-        const reqTrackId = data.trackId || 'current';
+        const isKnownPeer =
+          this.childrenIds.has(fromPeerId) ||
+          this.childDataConns.has(fromPeerId) ||
+          this.relayChildrenIds.has(fromPeerId) ||
+          (fromPeerId !== this.peerId && this.masterTreeMap.has(fromPeerId));
+        if (!isKnownPeer) return;
+
+        const reqTrackId = typeof data.trackId === 'string' && (data.trackId === 'current' || TRACK_ID_RE.test(data.trackId))
+          ? data.trackId
+          : 'current';
+        let safeMissing: number[] | undefined;
+        if (Array.isArray(data.missingIndexes)) {
+          const seen = new Set<number>();
+          safeMissing = [];
+          for (const rawIdx of data.missingIndexes) {
+            if (typeof rawIdx === 'number' && Number.isInteger(rawIdx) && rawIdx >= 0 && rawIdx < 2560 && !seen.has(rawIdx)) {
+              seen.add(rawIdx);
+              safeMissing.push(rawIdx);
+              if (safeMissing.length >= 2560) break;
+            }
+          }
+        }
         this.log(`Child ${fromPeerId} requested audio chunks (track: ${reqTrackId})`);
         if (this.onRequestTrackChunks) {
-          this.onRequestTrackChunks(fromPeerId, reqTrackId, data.missingIndexes);
+          this.onRequestTrackChunks(fromPeerId, reqTrackId, safeMissing);
         }
       } else if (data.type === 'link_ping') {
         if (this.isDJ) {
           const node = this.masterTreeMap.get(fromPeerId);
           if (node) {
             node.lastHeartbeat = Date.now();
-            if (typeof data.bufferPct === 'number') node.bufferPct = data.bufferPct;
+            if (typeof data.bufferPct === 'number' && Number.isFinite(data.bufferPct)) {
+              node.bufferPct = Math.max(0, Math.min(100, Math.round(data.bufferPct)));
+            }
           }
         }
         // Reply with link_pong over WebRTC or Relay
@@ -1482,10 +1819,14 @@ export class P2PMesh {
         // Parent replied! Reset missed pings
         this.missedParentPings = 0;
       } else if (data.type === 'child_departing') {
-        this.log(`Child ${data.childPeerId} gracefully departed`);
-        this.childDataConns.delete(data.childPeerId);
-        this.relayChildrenIds.delete(data.childPeerId);
-        this.childrenIds.delete(data.childPeerId);
+        if (typeof data.childPeerId === 'string' && data.childPeerId !== fromPeerId) return;
+        if (!this.childrenIds.has(fromPeerId) && !this.childDataConns.has(fromPeerId) && !this.relayChildrenIds.has(fromPeerId)) {
+          return;
+        }
+        this.log(`Child ${fromPeerId} gracefully departed`);
+        this.childDataConns.delete(fromPeerId);
+        this.relayChildrenIds.delete(fromPeerId);
+        this.childrenIds.delete(fromPeerId);
       }
     }
   }
@@ -1640,50 +1981,93 @@ export class P2PMesh {
     return packet.buffer;
   }
 
-  private handleBinaryChunk(data: ArrayBuffer) {
-    if (data.byteLength < 40) return;
+  private async handleBinaryChunk(data: ArrayBuffer, fromPeerId = '') {
+    if (data.byteLength < 40 || data.byteLength > 96 * 1024) return;
     const view = new DataView(data);
     const trackId = new TextDecoder().decode(new Uint8Array(data, 0, 32)).trim();
+    if (!TRACK_ID_RE.test(trackId)) return;
     const chunkIndex = view.getUint32(32, false);
     const totalChunks = view.getUint32(36, false);
 
     if (this.isDJ) {
+      if (!fromPeerId || !this.authorizedInjectors.has(fromPeerId)) return;
+      if (this.authorizedTrackSenders.get(trackId) !== fromPeerId) return;
+      const injectManifest = this.pendingInjectManifests.get(trackId);
+      if (!injectManifest || totalChunks !== injectManifest.totalChunks || chunkIndex >= injectManifest.totalChunks) {
+        return;
+      }
       const audioData = data.slice(40);
+      if (injectManifest.chunkHashes && typeof crypto !== 'undefined' && crypto.subtle) {
+        const expected = injectManifest.chunkHashes[chunkIndex];
+        if (!expected) return;
+        const actual = await sha256Base64(audioData);
+        if (actual !== expected) {
+          console.warn(`[CO-DJ] Dropped tampered chunk ${trackId}:${chunkIndex} from ${fromPeerId}`);
+          return;
+        }
+      }
       this.onInjectedChunkReceived?.(trackId, chunkIndex, totalChunks, audioData);
       return;
     }
 
-    // Track chunk reception metrics for buffer stall watchdog
-    this.chunksReceivedSinceParentConnect++;
-    this.lastChunkReceivedAt = Date.now();
+    // Ensure any queued station_state verification settles before checking manifest hashes
+    await this.listenerVerifyQueue;
+
+    const manifest = this.stationState?.trackManifests?.[trackId];
+    if (!manifest || totalChunks !== manifest.totalChunks || chunkIndex >= manifest.totalChunks) {
+      return;
+    }
 
     const chunkKey = `${trackId}:${chunkIndex}`;
 
     // Deduplication check: drop duplicate chunks to prevent feedback storms and CPU saturation
-    if (this.seenChunks.has(chunkKey)) {
+    if (this.seenChunks.has(chunkKey) || this.inFlightChunkKeys.has(chunkKey)) {
       return;
     }
 
+    this.inFlightChunkKeys.add(chunkKey);
     const audioData = data.slice(40);
-    const accepted = this.onChunkReceived
-      ? this.onChunkReceived(trackId, chunkIndex, totalChunks, audioData) !== false
-      : true;
-
-    if (!accepted) return;
-
-    this.seenChunks.add(chunkKey);
-
-    if (this.seenChunks.size > 2000) {
-      const iter = this.seenChunks.values();
-      for (let i = 0; i < 500; i++) {
-        const next = iter.next();
-        if (next.done) break;
-        this.seenChunks.delete(next.value);
+    try {
+      if (manifest.chunkHashes && typeof crypto !== 'undefined' && crypto.subtle) {
+        const expectedHash = manifest.chunkHashes[chunkIndex];
+        if (!expectedHash) return;
+        const actualHash = await sha256Base64(audioData);
+        if (actualHash !== expectedHash) {
+          console.warn(`[P2P Mesh] Dropped corrupted/forged chunk ${chunkKey} (SHA-256 mismatch)`);
+          return;
+        }
       }
-    }
 
-    // Forward down to assigned children in the pyramid
-    this.relayBinaryToChildren(data);
+      if (this.seenChunks.has(chunkKey)) {
+        return;
+      }
+
+      // Track chunk reception metrics for buffer stall watchdog
+      this.chunksReceivedSinceParentConnect++;
+      this.lastChunkReceivedAt = Date.now();
+
+      const accepted = this.onChunkReceived
+        ? this.onChunkReceived(trackId, chunkIndex, totalChunks, audioData) !== false
+        : true;
+
+      if (!accepted) return;
+
+      this.seenChunks.add(chunkKey);
+
+      if (this.seenChunks.size > 2000) {
+        const iter = this.seenChunks.values();
+        for (let i = 0; i < 500; i++) {
+          const next = iter.next();
+          if (next.done) break;
+          this.seenChunks.delete(next.value);
+        }
+      }
+
+      // Forward down to assigned children in the pyramid
+      this.relayBinaryToChildren(data);
+    } finally {
+      this.inFlightChunkKeys.delete(chunkKey);
+    }
   }
 
   private relayBinaryToChildren(data: ArrayBuffer) {
@@ -1765,15 +2149,17 @@ export class P2PMesh {
 
   // --- 10. Master Tree Synchronization & State Updates ---
 
-  private broadcastControl(msg: any) {
-    if (this.canSendControlViaWebRTC(msg)) {
-      for (const conn of this.allListenerConns.values()) {
-        if (conn.open) {
-          try { conn.send(msg); } catch {}
+  private broadcastControl(msg: Record<string, unknown>) {
+    this.enqueueSignedDjDispatch((signedMsg) => {
+      if (this.canSendControlViaWebRTC(signedMsg)) {
+        for (const conn of this.allListenerConns.values()) {
+          if (conn.open) {
+            try { conn.send(signedMsg); } catch {}
+          }
         }
       }
-    }
-    this.sendViaRelay('*', msg);
+      this.sendViaRelay('*', signedMsg);
+    }, msg);
   }
 
   public updateStationState(partialState: Partial<StationState>) {
@@ -1787,9 +2173,13 @@ export class P2PMesh {
 
   private broadcastTreeTopology() {
     this.notifyTreeChange();
+    const treeSnapshot = Array.from(this.masterTreeMap.entries(), ([id, node]) => [
+      id,
+      { ...node, children: [...node.children] }
+    ]);
     this.broadcastControl({
       type: 'master_tree_update',
-      tree: Array.from(this.masterTreeMap.entries())
+      tree: treeSnapshot
     });
   }
 

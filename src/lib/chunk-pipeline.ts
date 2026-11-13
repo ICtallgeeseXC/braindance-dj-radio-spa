@@ -4,6 +4,28 @@
 import { OPFSTrackWriter, isOPFSSupported } from './audio-storage';
 
 export const CHUNK_SIZE = 48 * 1024; // 48KB chunks (safe under WebRTC RTCDataChannel 64KB message limits)
+export const MAX_TRACK_CHUNKS = 2560; // ~120MB upper bound per track
+export const MAX_COVER_DATA_URL_LEN = 512 * 1024;
+
+const ALLOWED_AUDIO_MIMES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/m4a',
+  'audio/aac',
+  'audio/flac',
+  'audio/x-flac',
+  'audio/ogg',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/webm',
+  'audio/opus'
+]);
+
+const TRACK_ID_RE = /^[a-zA-Z0-9_-]{3,32}$/;
+const SAFE_COVER_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/i;
+const SHA256_B64_RE = /^[A-Za-z0-9+/]{43}=$/;
 
 export interface TrackManifest {
   trackId: string;
@@ -15,6 +37,105 @@ export interface TrackManifest {
   totalSize: number;
   totalChunks: number;
   coverDataUrl?: string; // base64 thumbnail if available
+  chunkHashes?: string[]; // per-chunk base64 SHA-256 digests
+}
+
+export async function sha256Base64(data: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const bytes = new Uint8Array(digest);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+export async function computeChunkHashes(
+  file: Blob,
+  chunkSize = CHUNK_SIZE
+): Promise<string[]> {
+  if (typeof crypto === 'undefined' || !crypto.subtle) return [];
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  const hashes: string[] = new Array(totalChunks);
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, file.size);
+    const buf = await file.slice(start, end).arrayBuffer();
+    hashes[i] = await sha256Base64(buf);
+  }
+  return hashes;
+}
+
+function cleanMetaString(value: unknown, fallback: string, maxLen = 200): string {
+  if (typeof value !== 'string') return fallback;
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLen);
+  return cleaned || fallback;
+}
+
+export function sanitizeTrackManifest(raw: unknown): TrackManifest | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw as Record<string, unknown>;
+
+  if (typeof m.trackId !== 'string' || !TRACK_ID_RE.test(m.trackId)) return null;
+
+  const totalChunks = typeof m.totalChunks === 'number' ? Math.trunc(m.totalChunks) : 0;
+  const totalSize = typeof m.totalSize === 'number' ? Math.trunc(m.totalSize) : 0;
+  if (
+    !Number.isFinite(totalChunks) ||
+    !Number.isFinite(totalSize) ||
+    totalChunks < 1 ||
+    totalChunks > MAX_TRACK_CHUNKS
+  ) {
+    return null;
+  }
+
+  const minExpectedSize = (totalChunks - 1) * CHUNK_SIZE + 1;
+  const maxExpectedSize = totalChunks * CHUNK_SIZE;
+  if (totalSize < minExpectedSize || totalSize > maxExpectedSize) {
+    return null;
+  }
+
+  const rawDuration = typeof m.duration === 'number' && Number.isFinite(m.duration) ? m.duration : 0;
+  const duration = Math.max(0, Math.min(86400, rawDuration));
+
+  const rawMime = typeof m.mimeType === 'string' ? m.mimeType.split(';')[0].trim().toLowerCase() : '';
+  const mimeType = ALLOWED_AUDIO_MIMES.has(rawMime) ? rawMime : 'audio/mpeg';
+
+  let coverDataUrl: string | undefined;
+  if (typeof m.coverDataUrl === 'string' && m.coverDataUrl.length <= MAX_COVER_DATA_URL_LEN) {
+    if (SAFE_COVER_DATA_URL_RE.test(m.coverDataUrl)) {
+      coverDataUrl = m.coverDataUrl;
+    }
+  }
+
+  let chunkHashes: string[] | undefined;
+  if (m.chunkHashes !== undefined) {
+    if (!Array.isArray(m.chunkHashes) || m.chunkHashes.length !== totalChunks) {
+      return null;
+    }
+    const validated: string[] = new Array(totalChunks);
+    for (let i = 0; i < totalChunks; i++) {
+      const h = m.chunkHashes[i];
+      if (typeof h !== 'string' || !SHA256_B64_RE.test(h)) {
+        return null;
+      }
+      validated[i] = h;
+    }
+    chunkHashes = validated;
+  }
+
+  return {
+    trackId: m.trackId,
+    title: cleanMetaString(m.title, 'Unknown Track'),
+    artist: cleanMetaString(m.artist, 'Unknown Artist'),
+    album: cleanMetaString(m.album, ''),
+    duration,
+    mimeType,
+    totalSize,
+    totalChunks,
+    ...(coverDataUrl ? { coverDataUrl } : {}),
+    ...(chunkHashes ? { chunkHashes } : {})
+  };
 }
 
 export interface ChunkPayload {
