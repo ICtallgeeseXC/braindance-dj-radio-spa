@@ -4717,7 +4717,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
     gap: 20px;
-    align-items: start;
+    align-items: stretch;
     min-width: 0;
   }
 
@@ -4725,6 +4725,7 @@
     .sidebar {
       display: flex;
       flex-direction: column;
+      min-height: 0;
     }
   }
 
@@ -4823,13 +4824,27 @@
     padding: 12px;
     font-family: var(--font-mono);
     font-size: 0.8rem;
-    height: 230px;
+    flex: 1 1 auto;
+    min-height: 230px;
+    max-height: 460px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 7px;
     content-visibility: auto;
     contain-intrinsic-size: auto 230px;
+  }
+
+  @media (min-width: 1450px) {
+    .log-card {
+      flex: 1 1 0;
+      min-height: 0;
+    }
+
+    .log-window {
+      flex: 1 1 0;
+      max-height: none;
+    }
   }
 
   .log-window::-webkit-scrollbar {
