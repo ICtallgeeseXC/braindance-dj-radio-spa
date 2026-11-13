@@ -186,6 +186,69 @@
     return '00';
   });
 
+  // Live P2P transport & signal health for the BLOOD_TYPE telemetry cell
+  let bloodTypeStatus = $derived.by(() => {
+    if (mode === 'select') {
+      return {
+        label: 'PATTERN: STANDBY',
+        tone: 'amber' as const,
+        tooltip: 'NO ACTIVE STATION LINK'
+      };
+    }
+    if (mode === 'dj') {
+      const listeners = peers.filter(p => p.role === 'listener');
+      if (listeners.length === 0) {
+        return {
+          label: 'PATTERN: BLUE [ORIGIN]',
+          tone: 'cyan' as const,
+          tooltip: 'DJ ORIGIN ONLINE • AWAITING LISTENERS'
+        };
+      }
+      const relayCount = listeners.filter(p => p.transport === 'relay').length;
+      const webrtcCount = listeners.length - relayCount;
+      if (relayCount > 0 && webrtcCount === 0) {
+        return {
+          label: 'PATTERN: AMBER [RELAY]',
+          tone: 'amber' as const,
+          tooltip: `${relayCount} LISTENER(S) ON TUNNEL RELAY`
+        };
+      }
+      if (relayCount > 0) {
+        return {
+          label: 'PATTERN: BLUE [HYBRID]',
+          tone: 'cyan' as const,
+          tooltip: `${webrtcCount} WEBRTC • ${relayCount} RELAY`
+        };
+      }
+      return {
+        label: 'PATTERN: BLUE [P2P]',
+        tone: 'cyan' as const,
+        tooltip: `${webrtcCount} DIRECT WEBRTC ${webrtcCount === 1 ? 'PEER' : 'PEERS'}`
+      };
+    }
+
+    if (peers.length === 0) {
+      return {
+        label: 'PATTERN: RED [SEEK]',
+        tone: 'danger' as const,
+        tooltip: 'SEARCHING FOR STATION MESH'
+      };
+    }
+    const me = peers.find(p => p.peerId === myPeerId);
+    if (me?.transport === 'relay') {
+      return {
+        label: 'PATTERN: AMBER [RELAY]',
+        tone: 'amber' as const,
+        tooltip: 'CONNECTED VIA TUNNEL RELAY FALLBACK'
+      };
+    }
+    return {
+      label: 'PATTERN: BLUE [P2P]',
+      tone: 'cyan' as const,
+      tooltip: 'CONNECTED VIA DIRECT WEBRTC MESH'
+    };
+  });
+
   // Playback & Buffer Indicators
   let currentTrack = $state<TrackManifest | null>(null);
   let nextTrack = $state<TrackManifest | null>(null);
@@ -962,9 +1025,22 @@
       <span class="magi-id">CASPER•3</span>
       <span class="magi-val cyan">CACHE_MEM: 100MB</span>
     </div>
-    <div class="magi-cell pattern-cell" class:active-pattern={mode !== 'select'}>
+    <div
+      class="magi-cell pattern-cell"
+      class:active-pattern={bloodTypeStatus.tone === 'cyan'}
+      class:danger-pattern={bloodTypeStatus.tone === 'danger'}
+      data-tooltip={bloodTypeStatus.tooltip}
+      data-tooltip-align="right"
+    >
       <span class="magi-id">BLOOD_TYPE</span>
-      <span class="magi-val">{mode === 'select' ? 'PATTERN: AMBER' : 'PATTERN: BLUE'}</span>
+      <span
+        class="magi-val"
+        class:cyan={bloodTypeStatus.tone === 'cyan'}
+        class:warn={bloodTypeStatus.tone === 'amber'}
+        class:danger={bloodTypeStatus.tone === 'danger'}
+      >
+        {bloodTypeStatus.label}
+      </span>
     </div>
   </section>
 
@@ -1746,6 +1822,11 @@
     border-color: rgba(0, 240, 255, 0.4);
   }
 
+  .magi-cell.pattern-cell.danger-pattern {
+    border-left-color: #ff2a4d;
+    border-color: rgba(255, 42, 77, 0.5);
+  }
+
   .magi-id {
     color: var(--text-muted);
     font-weight: bold;
@@ -1766,6 +1847,10 @@
 
   .magi-val.cyan {
     color: var(--neon-cyan);
+  }
+
+  .magi-val.danger {
+    color: #ff2a4d;
   }
 
   /* Main Layout Grid: Single-column default for mobile & standard windows; 2-col on ultra-wide */
