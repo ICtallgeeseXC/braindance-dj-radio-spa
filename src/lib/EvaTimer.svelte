@@ -961,7 +961,9 @@
     z-index: 10;
     display: inline-flex;
     align-items: center;
+    justify-content: space-between;
     gap: 7px;
+    min-width: 132px;
     font-family: 'Share Tech Mono', monospace;
     font-size: 0.72rem;
     letter-spacing: 0.1em;
@@ -992,6 +994,8 @@
     font-weight: 800;
     font-size: 0.74rem;
     letter-spacing: 0.12em;
+    min-width: 3.2ch;
+    text-align: center;
   }
   .vis-bars {
     display: inline-flex;

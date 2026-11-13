@@ -1054,10 +1054,20 @@
 
             <div class="volume-slider">
               <div class="vol-label-group">
-                <span class="vol-prefix">VOL</span>
+                <span class="vol-led" class:muted={volume === 0} aria-hidden="true"></span>
+                <span class="vol-prefix">VOL //</span>
                 <span class="vol-label">GAIN</span>
               </div>
               <div class="vol-track-wrap">
+                <div class="vol-segments" aria-hidden="true">
+                  {#each Array(10) as _, idx}
+                    <span
+                      class="vol-seg"
+                      class:lit={volume >= (idx + 0.5) / 10}
+                      class:peak={idx >= 8}
+                    ></span>
+                  {/each}
+                </div>
                 <input
                   type="range"
                   min="0"
@@ -2325,20 +2335,33 @@
     font-size: 0.76rem;
     font-family: var(--font-mono);
     background: rgba(3, 7, 16, 0.95);
-    border: 1px solid rgba(0, 240, 255, 0.35);
-    clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
-    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 119, 0, 0.45);
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.85);
     padding: 6px 14px;
+    user-select: none;
   }
 
   .vol-label-group {
     display: flex;
-    align-items: baseline;
-    gap: 5px;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .vol-led {
+    width: 5px;
+    height: 13px;
+    background: #ff7700;
+    box-shadow: 0 0 6px rgba(255, 119, 0, 0.75);
+  }
+
+  .vol-led.muted {
+    background: #ff2a4d;
+    box-shadow: 0 0 6px rgba(255, 42, 77, 0.85);
   }
 
   .vol-prefix {
-    color: rgba(255, 119, 0, 0.55);
+    color: rgba(255, 119, 0, 0.65);
     font-size: 0.65rem;
     font-weight: bold;
   }
@@ -2352,50 +2375,57 @@
   }
 
   .vol-track-wrap {
+    position: relative;
     display: flex;
     align-items: center;
+    width: 112px;
+    height: 18px;
+  }
+
+  .vol-segments {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 3px;
+    width: 100%;
+    height: 12px;
+    pointer-events: none;
+  }
+
+  .vol-seg {
+    background: rgba(255, 119, 0, 0.1);
+    border: 1px solid rgba(255, 119, 0, 0.25);
+    height: 100%;
+  }
+
+  .vol-seg.lit {
+    background: #ff7700;
+    border-color: #ffaa33;
+    box-shadow: 0 0 5px rgba(255, 119, 0, 0.6);
+  }
+
+  .vol-seg.lit.peak {
+    background: #00f0ff;
+    border-color: #7df6ff;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.75);
   }
 
   .volume-slider input[type="range"] {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100px;
-    height: 6px;
-    background: #0d0402;
-    border: 1px solid rgba(255, 119, 0, 0.55);
-    outline: none;
-    cursor: pointer;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
-  }
-
-  .volume-slider input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 12px;
-    height: 18px;
-    background: linear-gradient(180deg, #ffffff 0%, #ff8500 25%, #d65500 75%, #6b2000 100%);
-    border: 1px solid #ffcc00;
-    clip-path: polygon(0 2px, 2px 0, calc(100% - 2px) 0, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) 100%, 2px 100%, 0 calc(100% - 2px));
-    box-shadow: 0 0 8px rgba(255, 119, 0, 0.85);
-    cursor: pointer;
-  }
-
-  .volume-slider input[type="range"]::-moz-range-thumb {
-    width: 12px;
-    height: 18px;
-    background: linear-gradient(180deg, #ffffff 0%, #ff8500 25%, #d65500 75%, #6b2000 100%);
-    border: 1px solid #ffcc00;
-    clip-path: polygon(0 2px, 2px 0, calc(100% - 2px) 0, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) 100%, 2px 100%, 0 calc(100% - 2px));
-    box-shadow: 0 0 8px rgba(255, 119, 0, 0.85);
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
     cursor: pointer;
   }
 
   .vol-val {
     color: #00f0ff;
-    min-width: 38px;
+    min-width: 40px;
     text-align: right;
     font-weight: bold;
     font-size: 0.84rem;
+    font-variant-numeric: tabular-nums;
     text-shadow: 0 0 6px rgba(0, 240, 255, 0.6);
   }
 
