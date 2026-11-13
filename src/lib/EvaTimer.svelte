@@ -575,10 +575,11 @@
     <!-- Top Left Header: "AUDIOVISUAL" in bright electric orange -->
     <text x="18" y="30" class="audiovisual-title">AUDIOVISUAL</text>
 
-    <!-- Visualizer Mode Toggle (OFF / LO / HI) -->
+    <!-- Visualizer Mode Toggle (OFF / LO / HI) - Centered in top bar between title and clock -->
     <g
-      transform="translate(248, 13)"
+      transform="translate(398, 11)"
       class="vis-mode-toggle"
+      class:is-lo={visMode === 'lo'}
       class:is-hi={visMode === 'hi'}
       class:is-off={visMode === 'off'}
       role="button"
@@ -592,8 +593,8 @@
       }}
       aria-label="Visualizer Mode: {visMode.toUpperCase()} (click to switch OFF, LO, HI)"
     >
-      <rect x="0" y="0" width="76" height="20" rx="2" class="vis-mode-box" />
-      <text x="38" y="13.5" text-anchor="middle" class="vis-mode-text">
+      <rect x="0" y="0" width="84" height="22" rx="2" class="vis-mode-box" />
+      <text x="42" y="15" text-anchor="middle" class="vis-mode-text">
         VIS: {visMode.toUpperCase()}
       </text>
     </g>
@@ -955,23 +956,23 @@
     outline: none;
   }
   .vis-mode-box {
-    fill: rgba(255, 119, 0, 0.12);
-    stroke: #ff7700;
-    stroke-width: 1.2;
+    fill: rgba(0, 212, 255, 0.14);
+    stroke: #00d4ff;
+    stroke-width: 1.4;
   }
   .vis-mode-text {
-    fill: #ff9922;
+    fill: #00d4ff;
     font-family: 'Share Tech Mono', monospace;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
   }
   .vis-mode-toggle.is-hi .vis-mode-box {
-    fill: rgba(0, 212, 255, 0.14);
-    stroke: #00d4ff;
+    fill: rgba(255, 42, 77, 0.16);
+    stroke: #ff2a4d;
   }
   .vis-mode-toggle.is-hi .vis-mode-text {
-    fill: #00d4ff;
+    fill: #ff2a4d;
   }
   .vis-mode-toggle.is-off .vis-mode-box {
     fill: rgba(120, 40, 20, 0.18);
@@ -981,7 +982,7 @@
     fill: rgba(255, 119, 0, 0.55);
   }
   .vis-mode-toggle:hover .vis-mode-box {
-    stroke-width: 1.8;
+    stroke-width: 2;
   }
 
   /* Header Typography matching reference image */
