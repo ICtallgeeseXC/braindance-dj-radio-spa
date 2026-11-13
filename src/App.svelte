@@ -1281,7 +1281,7 @@
               <span class="log-dot red"></span>
               <span class="log-dot amber"></span>
               <span class="log-dot green"></span>
-              <span class="log-term-title">SURVEILLANCE.LOG</span>
+              <span class="log-term-title">P2P.LOG</span>
             </div>
             <span class="log-term-sys">MAGI_SYS</span>
           </div>
