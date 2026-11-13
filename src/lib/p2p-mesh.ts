@@ -404,6 +404,14 @@ export class P2PMesh {
       return;
     }
 
+    if (msg.type === 'relay_dj_disconnected' && !this.isDJ) {
+      this.log(`🚨 DJ disconnected from station "${msg.stationId}".`);
+      this.hasJoinedPyramid = false;
+      this.currentParentId = null;
+      this.usingRelayForParentStream = false;
+      return;
+    }
+
     if (msg.type === 'relay_peer_disconnected' && this.isDJ) {
       const droppedId = msg.peerId;
       // Only prune immediately if they don't have an active direct WebRTC connection

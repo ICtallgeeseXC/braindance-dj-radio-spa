@@ -171,12 +171,22 @@ export class P2PRelayDO extends DurableObject<Env> {
     if (!meta?.peerId || !meta?.stationId) return;
 
     const djPeerId = `station-${meta.stationId}-dj`;
-    if (meta.peerId === djPeerId) return;
 
     for (const other of this.ctx.getWebSockets()) {
       if (other === ws) continue;
       const otherMeta = other.deserializeAttachment() as PeerAttachment | null;
       if (otherMeta?.peerId === meta.peerId) return;
+    }
+
+    if (meta.peerId === djPeerId) {
+      const msg = JSON.stringify({ type: 'relay_dj_disconnected', stationId: meta.stationId });
+      for (const other of this.ctx.getWebSockets()) {
+        const otherMeta = other.deserializeAttachment() as PeerAttachment | null;
+        if (otherMeta?.stationId === meta.stationId && otherMeta.peerId !== djPeerId) {
+          try { other.send(msg); } catch {}
+        }
+      }
+      return;
     }
 
     for (const other of this.ctx.getWebSockets()) {

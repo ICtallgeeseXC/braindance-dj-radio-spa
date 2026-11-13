@@ -8,8 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "deploy": "npm run build && npx wrangler deploy",
-    "deploy:pages": "npm run build && npx wrangler pages deploy ./dist --project-name=p2p-radio"
+    "deploy": "npm run build && npx wrangler deploy"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",

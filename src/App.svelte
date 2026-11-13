@@ -25,7 +25,7 @@
   let isBroadcasting = $state<boolean>(false);
   let djActiveTrackIndex = $state<number>(0);
   let uploadProcessing = $state<boolean>(false);
-  let autoCompressMp3 = $state<boolean>(false);
+  let autoCompressMp3 = $state<boolean>(true);
   let compressStatus = $state<string>('');
 
   // Mesh & Player Instances

@@ -87,6 +87,7 @@ export class PlayerController {
 
     this.audioElement.onplay = () => {
       this.ensureAudioContextRunning();
+      this.updateMediaSessionState('playing');
       if (this.onPlayStateChange) this.onPlayStateChange(true);
     };
 
@@ -102,8 +103,11 @@ export class PlayerController {
     };
 
     this.audioElement.onpause = () => {
+      this.updateMediaSessionState('paused');
       if (this.onPlayStateChange) this.onPlayStateChange(false);
     };
+
+    this.initMediaSession();
 
     this.audioElement.onerror = async () => {
       const err = this.audioElement.error;
@@ -176,6 +180,33 @@ export class PlayerController {
         }
       });
     }
+  }
+
+  private initMediaSession() {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.setActionHandler('play', () => {
+        this.resumeSync();
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        this.pause();
+      });
+    } catch {}
+  }
+
+  private updateMediaSessionState(state: 'playing' | 'paused' | 'none') {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = state;
+      const manifest = this.currentTrackId ? this.trackManifests.get(this.currentTrackId) : null;
+      if (manifest && typeof MediaMetadata !== 'undefined') {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: manifest.title || 'P2P Radio Stream',
+          artist: manifest.artist || 'PYRAMID // RADIO',
+          album: 'PYRAMID // RADIO'
+        });
+      }
+    } catch {}
   }
 
   public setupAudioAnalyser() {
