@@ -2868,6 +2868,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    max-width: 100%;
+    box-sizing: border-box;
     font-size: 0.76rem;
     font-family: var(--font-mono);
     background: rgba(3, 7, 16, 0.95);
@@ -2882,11 +2884,14 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .vol-led {
     width: 5px;
     height: 13px;
+    flex-shrink: 0;
     background: #ff7700;
     box-shadow: 0 0 6px rgba(255, 119, 0, 0.75);
   }
@@ -2900,6 +2905,8 @@
     color: rgba(255, 119, 0, 0.65);
     font-size: 0.65rem;
     font-weight: bold;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .vol-label {
@@ -2908,13 +2915,17 @@
     font-weight: 800;
     letter-spacing: 0.1em;
     text-shadow: 0 0 6px rgba(255, 119, 0, 0.5);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .vol-track-wrap {
     position: relative;
     display: flex;
     align-items: center;
-    width: 112px;
+    flex: 1 1 88px;
+    min-width: 72px;
+    max-width: 112px;
     height: 18px;
   }
 
