@@ -320,7 +320,7 @@
     { sup: '9', minHz: 8000, maxHz: 12000, baseY: 82 },
     { sup: '10', minHz: 12000, maxHz: 18000, baseY: 59 }
   ];
-  const PSYCHO_CONVERGE_X = 484;
+  const PSYCHO_CONVERGE_X = 396;
   const PSYCHO_CONVERGE_Y = 289;
   const PSYCHO_THRESHOLD = 0.26;
   const psychoPaths: (SVGPathElement | null)[] = Array(10).fill(null);
@@ -331,8 +331,8 @@
 
   function buildPsychoLeftPath(idx: number): string {
     const baseY = PSYCHO_BANDS[idx].baseY;
-    const kneeX = 334 - idx * 2.4;
-    return `M14,${baseY} L${kneeX.toFixed(1)},${baseY} L${PSYCHO_CONVERGE_X},${PSYCHO_CONVERGE_Y}`;
+    const kneeX = 218 - idx * 2.2;
+    return `M18,${baseY} L${kneeX.toFixed(1)},${baseY} L${PSYCHO_CONVERGE_X},${PSYCHO_CONVERGE_Y}`;
   }
 
   function buildPsychoRightPath(
@@ -349,7 +349,7 @@
 
     for (let s = 1; s <= points; s++) {
       const p = s / points;
-      const baseX = PSYCHO_CONVERGE_X + p * 378;
+      const baseX = PSYCHO_CONVERGE_X + p * (866 - PSYCHO_CONVERGE_X);
       // Smooth fan-out from convergence vertex toward each band's target stratum
       const fanY = PSYCHO_CONVERGE_Y + (targetY - PSYCHO_CONVERGE_Y) * Math.pow(p, 0.72);
 
@@ -947,23 +947,23 @@
         <!-- Background Near-Overclipping Warning Overlay (behind psychographic strands) -->
         <g bind:this={psychoWarnGroup} class="psycho-warn-bg" opacity="0">
           <!-- Top double-bordered APPROACHING LIMIT stamp -->
-          <rect x="498" y="56" width="352" height="44" rx="7" fill="rgba(255, 16, 48, 0.08)" stroke="#ff1e42" stroke-width="2" />
-          <rect x="503" y="61" width="342" height="34" rx="4" fill="none" stroke="#ff1e42" stroke-width="1.3" />
-          <text x="674" y="87" text-anchor="middle" textLength="322" lengthAdjust="spacingAndGlyphs" class="psycho-warn-title">
+          <rect x="448" y="56" width="380" height="44" rx="7" fill="rgba(255, 16, 48, 0.08)" stroke="#ff1e42" stroke-width="2" />
+          <rect x="453" y="61" width="370" height="34" rx="4" fill="none" stroke="#ff1e42" stroke-width="1.3" />
+          <text x="638" y="87" text-anchor="middle" textLength="348" lengthAdjust="spacingAndGlyphs" class="psycho-warn-title">
             APPROACHING LIMIT
           </text>
 
           <!-- Bottom double-bordered DANGER stamp -->
-          <rect x="498" y="108" width="232" height="46" rx="7" fill="rgba(255, 16, 48, 0.08)" stroke="#ff1e42" stroke-width="2" />
-          <rect x="503" y="113" width="222" height="36" rx="4" fill="none" stroke="#ff1e42" stroke-width="1.3" />
-          <text x="614" y="142" text-anchor="middle" textLength="200" lengthAdjust="spacingAndGlyphs" class="psycho-warn-danger">
+          <rect x="448" y="108" width="246" height="46" rx="7" fill="rgba(255, 16, 48, 0.08)" stroke="#ff1e42" stroke-width="2" />
+          <rect x="453" y="113" width="236" height="36" rx="4" fill="none" stroke="#ff1e42" stroke-width="1.3" />
+          <text x="571" y="142" text-anchor="middle" textLength="212" lengthAdjust="spacingAndGlyphs" class="psycho-warn-danger">
             DANGER
           </text>
         </g>
 
         <!-- Left Converging Neural Links (LINK A¹ .. A¹⁰) & Live Right-Side Audiograph Strands -->
         {#each PSYCHO_BANDS as band, i}
-          <text x="64" y={band.baseY - 5} class="psycho-link-label">
+          <text x="52" y={band.baseY - 5} class="psycho-link-label">
             LINK A<tspan dy="-4" font-size="7.5">{band.sup}</tspan>
           </text>
           <path
@@ -986,17 +986,17 @@
           />
         {/each}
 
-        <!-- Bottom Calibrated Psychographic Ruler (-50 .. ±0 .. +50) -->
+        <!-- Bottom Calibrated Psychographic Ruler (-40 .. ±0 .. +50) -->
         <line x1="12" y1="292" x2="868" y2="292" stroke="#ff7700" stroke-width="1.5" />
-        {#each [-50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50] as tickVal}
-          {@const tx = 460 + tickVal * 8}
+        {#each [-40, -30, -20, -10, 0, 10, 20, 30, 40, 50] as tickVal}
+          {@const tx = 386 + tickVal * 9.2}
           <line x1={tx} y1="292" x2={tx} y2="300" stroke="#ff7700" stroke-width="1.3" />
           <text x={tx} y="313" text-anchor="middle" class="psycho-ruler-label">
             {tickVal === 0 ? '±0' : tickVal > 0 ? `+${tickVal}` : `${tickVal}`}
           </text>
           {#if tickVal < 50}
             {#each [1, 2, 3, 4] as sub}
-              <line x1={tx + sub * 16} y1="292" x2={tx + sub * 16} y2="296.5" stroke="#ff7700" stroke-width="0.9" opacity="0.85" />
+              <line x1={tx + sub * 18.4} y1="292" x2={tx + sub * 18.4} y2="296.5" stroke="#ff7700" stroke-width="0.9" opacity="0.85" />
             {/each}
           {/if}
         {/each}
