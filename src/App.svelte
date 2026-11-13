@@ -16,11 +16,50 @@
   import MagiComputing from './lib/MagiComputing.svelte';
   import SystemDialog from './lib/SystemDialog.svelte';
   import SystemToast, { type ToastItem } from './lib/SystemToast.svelte';
+  import EmergencyBanner from './lib/EmergencyBanner.svelte';
 
   let toasts = $state<ToastItem[]>([]);
   let toastSeq = 0;
   let lastSeenActionId = '';
   let hasInitialListenerSync = false;
+
+  let emergencyBanner = $state<{
+    open: boolean;
+    title: string;
+    subtitle: string;
+    stationCode: string;
+  }>({
+    open: false,
+    title: 'BROADCAST',
+    subtitle: 'SYSTEM-WIDE ANNOUNCEMENT',
+    stationCode: ''
+  });
+  let emergencyBannerTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function dismissEmergencyBanner() {
+    if (emergencyBannerTimer !== null) {
+      clearTimeout(emergencyBannerTimer);
+      emergencyBannerTimer = null;
+    }
+    emergencyBanner = { ...emergencyBanner, open: false };
+  }
+
+  function triggerEmergencyBanner(title: string, subtitle: string, code: string, durationMs = 5000) {
+    if (emergencyBannerTimer !== null) {
+      clearTimeout(emergencyBannerTimer);
+      emergencyBannerTimer = null;
+    }
+    emergencyBanner = {
+      open: true,
+      title,
+      subtitle,
+      stationCode: code
+    };
+    emergencyBannerTimer = setTimeout(() => {
+      emergencyBanner = { ...emergencyBanner, open: false };
+      emergencyBannerTimer = null;
+    }, durationMs);
+  }
 
   function dismissToast(id: string) {
     toasts = toasts.filter((t) => t.id !== id);
@@ -469,6 +508,10 @@
   onDestroy(() => {
     window.removeEventListener('beforeinstallprompt', onBeforeInstall);
     window.removeEventListener('appinstalled', onAppInstalled);
+    if (emergencyBannerTimer !== null) {
+      clearTimeout(emergencyBannerTimer);
+      emergencyBannerTimer = null;
+    }
     mesh?.destroy();
     player?.destroy();
   });
@@ -623,6 +666,7 @@
 
     mode = 'dj';
     isBroadcasting = true;
+    triggerEmergencyBanner('BROADCAST', 'SYSTEM-WIDE ANNOUNCEMENT', stationCode, 5000);
 
     try {
       const manifestObj: Record<string, TrackManifest> = {};
@@ -899,6 +943,7 @@
     lastSeenActionId = '';
     history.replaceState(null, '', '#' + stationCode);
     mode = 'listener';
+    triggerEmergencyBanner('SYNCING TO DJ', 'ESTABLISHING P2P CARRIER LOCK', stationCode, 5000);
     mesh.joinStation(stationCode);
     myPeerId = mesh.peerId;
   }
@@ -1644,6 +1689,14 @@
       </div>
     </aside>
   </div>
+
+  <EmergencyBanner
+    open={emergencyBanner.open}
+    title={emergencyBanner.title}
+    subtitle={emergencyBanner.subtitle}
+    stationCode={emergencyBanner.stationCode}
+    onDismiss={dismissEmergencyBanner}
+  />
 
   <SystemDialog
     open={systemDialog.open}
