@@ -225,8 +225,37 @@
 
   function generateCryptoSecret(): string {
     const bytes = new Uint8Array(12);
-    crypto.getRandomValues(bytes);
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = Math.floor(Math.random() * 256);
+      }
+    }
     return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function copyToClipboard(text: string, toastMsg: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        pushToast('success', toastMsg);
+        return;
+      }
+    } catch {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      pushToast('success', toastMsg);
+    } catch {
+      pushToast('warning', 'CLIPBOARD COPY FAILED');
+    }
   }
 
   function parseStationInput(raw: string): { station: string; injectToken: string } {
@@ -941,6 +970,7 @@
     }
     history.replaceState(null, '', '#' + stationCode);
 
+    injectSecret = generateCryptoSecret();
     mode = 'dj';
     isBroadcasting = true;
     triggerEmergencyBanner('BROADCAST', 'SYSTEM-WIDE ANNOUNCEMENT', stationCode, 5000);
@@ -950,7 +980,6 @@
       for (const [id, m] of trackManifests.entries()) {
         manifestObj[id] = m;
       }
-      injectSecret = generateCryptoSecret();
       mesh.hostStation(stationCode, manifestObj, playlist, isPublicStation, injectSecret);
       myPeerId = mesh.peerId;
     } catch (e) {
@@ -1769,10 +1798,7 @@
               <button
                 type="button"
                 class="share-code-btn"
-                onclick={() => {
-                  navigator.clipboard.writeText(`${window.location.origin}/#${stationCode}`);
-                  pushToast('info', 'STATION UPLINK COPIED');
-                }}
+                onclick={() => copyToClipboard(`${window.location.origin}/#${stationCode}`, 'STATION UPLINK COPIED')}
                 title="Click to copy station link"
               >
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -1782,20 +1808,22 @@
                 <span>{window.location.host}/#{stationCode}</span>
               </button>
               {#if mode === 'dj' && injectSecret}
+                <span class="share-label codj-label">CO-DJ:</span>
                 <button
                   type="button"
                   class="share-code-btn codj-key-btn"
-                  onclick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/#${stationCode}?inject=${injectSecret}`);
-                    pushToast('success', 'CO-DJ INJECT UPLINK COPIED');
-                  }}
+                  onclick={() =>
+                    copyToClipboard(
+                      `${window.location.origin}/#${stationCode}?inject=${injectSecret}`,
+                      'CO-DJ INJECT LINK COPIED'
+                    )}
                   title="Copy secret Co-DJ invite link (grants track injection clearance)"
                 >
                   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <circle cx="7.5" cy="15.5" r="4.5" />
                     <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" />
                   </svg>
-                  <span>CO-DJ KEY</span>
+                  <span>COPY INJECT LINK [{injectSecret.slice(0, 4).toUpperCase()}]</span>
                 </button>
               {/if}
               <button
