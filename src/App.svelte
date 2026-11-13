@@ -11,6 +11,7 @@
   import EvaTimer from './lib/EvaTimer.svelte';
   import EvaBufferAnalysis from './lib/EvaBufferAnalysis.svelte';
   import SeeleMonolith from './lib/SeeleMonolith.svelte';
+  import MagiComputing from './lib/MagiComputing.svelte';
 
   // App mode
   let mode = $state<'select' | 'dj' | 'listener'>('select');
@@ -1108,6 +1109,8 @@
             </div>
           </div>
         </div>
+
+        <MagiComputing {peers} activeStream={mode === 'dj' ? isPlaying : isAudioActuallyPlaying} />
 
         <!-- DJ Playlist Queue -->
         {#if mode === 'dj'}
