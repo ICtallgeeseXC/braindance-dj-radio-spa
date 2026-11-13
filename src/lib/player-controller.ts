@@ -202,8 +202,8 @@ export class PlayerController {
       if (manifest && typeof MediaMetadata !== 'undefined') {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: manifest.title || 'P2P Radio Stream',
-          artist: manifest.artist || 'PYRAMID // RADIO',
-          album: 'PYRAMID // RADIO'
+          artist: manifest.artist || 'BRAINDANCE // RADIO',
+          album: 'BRAINDANCE // RADIO'
         });
       }
     } catch {}

@@ -1,5 +1,5 @@
 // public/sw.js
-// PYRAMID // RADIO Service Worker
+// BRAINDANCE // RADIO Service Worker
 // Provides 100% offline functionality, full asset caching, and standalone PWA installation.
 
 const CACHE_NAME = 'pyramid-radio-v2';
@@ -77,7 +77,7 @@ self.addEventListener('fetch', (event) => {
           // If offline, serve cached index.html
           const cached = await caches.match('/index.html') || await caches.match('/');
           if (cached) return cached;
-          return new Response('Offline: PYRAMID // RADIO cache ready', {
+          return new Response('Offline: BRAINDANCE // RADIO cache ready', {
             headers: { 'Content-Type': 'text/html' }
           });
         })

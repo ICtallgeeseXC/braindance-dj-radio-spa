@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/web-manifest-combined.json",
   "id": "/",
-  "name": "PYRAMID // RADIO - Cyberpunk P2P Mesh",
-  "short_name": "PyramidRadio",
+  "name": "BRAINDANCE // RADIO - Cyberpunk P2P Mesh",
+  "short_name": "BraindanceRadio",
   "description": "Zero-cloud peer-to-peer audio mesh broadcasting station with real-time synchronized playback and audio analysis HUD.",
   "start_url": "/",
   "scope": "/",

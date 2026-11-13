@@ -675,7 +675,7 @@
 
   function onAppInstalled() {
     deferredInstallPrompt = null;
-    console.log('[PWA] PYRAMID // RADIO installed successfully');
+    console.log('[PWA] BRAINDANCE // RADIO installed successfully');
   }
 
   onDestroy(() => {
@@ -1382,7 +1382,7 @@
       <div class="logo-titles">
         <div class="logo-row">
           <div class="logo-pulse"></div>
-          <span class="logo-text">PYRAMID // RADIO</span>
+          <span class="logo-text">BRAINDANCE // RADIO</span>
           <span class="badge">MAGI MESH</span>
         </div>
         <span class="logo-sub">特務機関 音響中継網 // CENTRAL DOGMA SYNCHRONIZED BROADCAST</span>
@@ -1391,7 +1391,7 @@
 
     <div class="header-right">
       {#if deferredInstallPrompt}
-        <button type="button" class="install-pwa-btn" onclick={handleInstallPwa} title="Install PYRAMID // RADIO as Standalone Offline App">
+        <button type="button" class="install-pwa-btn" onclick={handleInstallPwa} title="Install BRAINDANCE // RADIO as Standalone Offline App">
           ⬇ INSTALL HUD
         </button>
       {/if}
