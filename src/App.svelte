@@ -109,7 +109,7 @@
           ? 'Terminating this link will shut down the DJ broadcast origin and disconnect all listeners. Confirm link termination?'
           : 'Severing this P2P audio link will disconnect your receiver from the station mesh. Confirm link termination?',
       confirmLabel: 'CONFIRM',
-      cancelLabel: 'ABORT',
+      cancelLabel: 'CANCEL',
       onConfirm: () => {
         systemDialog.open = false;
         abortArmed = false;
