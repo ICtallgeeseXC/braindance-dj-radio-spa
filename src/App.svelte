@@ -1075,6 +1075,7 @@
                     <span
                       class="vol-seg"
                       class:lit={volume >= (idx + 0.5) / 10}
+                      class:mid={idx >= 5 && idx <= 7}
                       class:peak={idx >= 8}
                     ></span>
                   {/each}
@@ -2186,7 +2187,7 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 14px;
+    gap: 16px;
     margin-top: 14px;
     padding: 14px 18px;
     background: #020409;
@@ -2219,9 +2220,26 @@
 
   .transport-group {
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 268px;
+    max-width: 100%;
+    flex-shrink: 0;
+  }
+
+  .transport-group .transport-btn,
+  .transport-group .main-play-btn {
+    width: 100%;
+    height: 36px;
+    padding: 0 14px 0 10px;
+    justify-content: flex-start;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  .transport-group .btn-glyph {
+    margin-left: auto;
   }
 
   .cmd-led {
@@ -2238,6 +2256,7 @@
     font-size: 0.66rem;
     font-weight: 700;
     letter-spacing: 0.06em;
+    flex-shrink: 0;
   }
 
   .main-play-btn {
@@ -2458,10 +2477,16 @@
     box-shadow: 0 0 5px rgba(255, 119, 0, 0.6);
   }
 
-  .vol-seg.lit.peak {
+  .vol-seg.lit.mid {
     background: #00f0ff;
     border-color: #7df6ff;
     box-shadow: 0 0 6px rgba(0, 240, 255, 0.75);
+  }
+
+  .vol-seg.lit.peak {
+    background: #ff2a4d;
+    border-color: #ff7a90;
+    box-shadow: 0 0 6px rgba(255, 42, 77, 0.8);
   }
 
   .volume-slider input[type="range"] {
