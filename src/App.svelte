@@ -14,7 +14,9 @@
 
   // App mode
   let mode = $state<'select' | 'dj' | 'listener'>('select');
-  let stationCode = $state<string>('');
+  let stationCode = $state<string>(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('p2p_station_code')) || ''
+  );
   let showBufferAnalysis = $state<boolean>(false);
 
   // DJ State
@@ -25,8 +27,24 @@
   let isBroadcasting = $state<boolean>(false);
   let djActiveTrackIndex = $state<number>(0);
   let uploadProcessing = $state<boolean>(false);
-  let autoCompressMp3 = $state<boolean>(true);
+  let autoCompressMp3 = $state<boolean>(
+    typeof localStorage !== 'undefined' && localStorage.getItem('p2p_auto_compress_mp3') !== null
+      ? localStorage.getItem('p2p_auto_compress_mp3') === 'true'
+      : true
+  );
   let compressStatus = $state<string>('');
+
+  $effect(() => {
+    try {
+      localStorage.setItem('p2p_auto_compress_mp3', String(autoCompressMp3));
+    } catch {}
+  });
+
+  $effect(() => {
+    try {
+      localStorage.setItem('p2p_station_code', stationCode.trim());
+    } catch {}
+  });
 
   // Mesh & Player Instances
   let mesh: P2PMesh | null = null;
