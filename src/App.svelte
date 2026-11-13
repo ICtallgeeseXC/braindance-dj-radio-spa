@@ -1558,7 +1558,7 @@
             <span class="abort-hazard-bar top" aria-hidden="true"></span>
             <span class="abort-inner">
               <span class="abort-led" aria-hidden="true"></span>
-              <span class="abort-label">{abortArmed ? 'ARMED // FIRE' : 'ABORT LINK'}</span>
+              <span class="abort-label">{abortArmed ? 'ABORT ARMED' : 'ABORT LINK'}</span>
             </span>
             <span class="abort-hazard-bar bottom" aria-hidden="true"></span>
           </button>
@@ -2655,6 +2655,26 @@
       #090204 6px,
       #090204 12px
     );
+  }
+
+  .exit-btn:hover .abort-hazard-bar,
+  .exit-btn:focus-visible .abort-hazard-bar {
+    animation: abort-hazard-march 0.55s linear infinite;
+  }
+
+  .exit-btn.armed:hover .abort-hazard-bar,
+  .exit-btn.armed:focus-visible .abort-hazard-bar {
+    animation: abort-hazard-march-armed 0.45s linear infinite;
+  }
+
+  @keyframes abort-hazard-march {
+    from { background-position: 0 0; }
+    to { background-position: 14.142px 0; }
+  }
+
+  @keyframes abort-hazard-march-armed {
+    from { background-position: 0 0; }
+    to { background-position: 16.971px 0; }
   }
 
   .abort-inner {

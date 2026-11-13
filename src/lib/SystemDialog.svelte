@@ -123,6 +123,16 @@
     );
   }
 
+  .sys-dialog-frame:has(.sys-btn.primary:hover) .sys-dialog-hazard,
+  .sys-dialog-frame:has(.sys-btn.primary:focus-visible) .sys-dialog-hazard {
+    animation: sys-hazard-march 0.55s linear infinite;
+  }
+
+  @keyframes sys-hazard-march {
+    from { background-position: 0 0; }
+    to { background-position: 28.284px 0; }
+  }
+
   .sys-dialog-frame.is-warning .sys-dialog-hazard {
     background: repeating-linear-gradient(
       -45deg,
