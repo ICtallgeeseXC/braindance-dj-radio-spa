@@ -269,19 +269,17 @@
     const injectToken = (params.get('inject') || '').trim();
     return { station, injectToken };
   }
+  interface CompressTrackProgress {
+    name: string;
+    pct: number;
+    status: 'queued' | 'active' | 'done';
+  }
+
   let compressStatus = $state<string>('');
-  let compressTrackPct = $state<number>(0);
+  let compressTracks = $state<CompressTrackProgress[]>([]);
   let compressBatchPct = $state<number>(0);
-  let compressTrackIndex = $state<number>(0);
-  let compressTrackTotal = $state<number>(0);
-  let compressFileName = $state<string>('');
 
-  const transcodeTrackTween = new Tween(0, { duration: 160, easing: cubicOut });
   const transcodeBatchTween = new Tween(0, { duration: 180, easing: cubicOut });
-
-  $effect(() => {
-    transcodeTrackTween.set(compressTrackPct, { duration: compressTrackPct === 0 ? 0 : 160 });
-  });
 
   $effect(() => {
     transcodeBatchTween.set(compressBatchPct, { duration: compressBatchPct === 0 ? 0 : 180 });
@@ -693,6 +691,12 @@
 
   // --- DJ Actions ---
 
+  function initCompressBatch(files: File[]) {
+    compressStatus = '';
+    compressBatchPct = 0;
+    compressTracks = files.map((f) => ({ name: f.name, pct: 0, status: 'queued' }));
+  }
+
   // Shared file transcode + metadata extractor for DJ & authorized Co-DJ listeners
   async function processAudioFile(
     origFile: File,
@@ -700,10 +704,10 @@
     total: number
   ): Promise<{ file: File; manifest: TrackManifest }> {
     let file = origFile;
-    compressTrackIndex = idx + 1;
-    compressTrackTotal = total;
-    compressFileName = origFile.name;
-    compressTrackPct = 0;
+    if (compressTracks[idx]) {
+      compressTracks[idx].status = 'active';
+      compressTracks[idx].pct = 0;
+    }
     compressBatchPct = Math.round((idx / total) * 100);
     compressStatus = `Processing track ${idx + 1}/${total}: ${origFile.name}...`;
 
@@ -713,7 +717,9 @@
       try {
         compressStatus = `Transcoding ${idx + 1}/${total} to 128k MP3... 0%`;
         file = await compressAudioTo128kMp3(origFile, origFile.name, (pct) => {
-          compressTrackPct = pct;
+          if (compressTracks[idx]) {
+            compressTracks[idx].pct = pct;
+          }
           compressBatchPct = Math.round(((idx + pct / 100) / total) * 100);
           compressStatus = `Transcoding ${idx + 1}/${total} to 128k MP3... ${pct}%`;
         });
@@ -722,7 +728,10 @@
       }
     }
 
-    compressTrackPct = 100;
+    if (compressTracks[idx]) {
+      compressTracks[idx].pct = 100;
+      compressTracks[idx].status = 'done';
+    }
     compressBatchPct = Math.round(((idx + 1) / total) * 100);
 
     const encodedMeta = file === origFile ? origMeta : await parseAudioFile(file);
@@ -752,11 +761,8 @@
 
   function resetCompressProgress() {
     compressStatus = '';
-    compressTrackPct = 0;
+    compressTracks = [];
     compressBatchPct = 0;
-    compressTrackIndex = 0;
-    compressTrackTotal = 0;
-    compressFileName = '';
   }
 
   // Parse (and optionally transcode) files, registering them in the playlist. Returns new trackIds.
@@ -780,11 +786,12 @@
   async function handleFilesSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
+    const files = Array.from(input.files);
     uploadProcessing = true;
-    resetCompressProgress();
+    initCompressBatch(files);
 
     try {
-      await ingestFiles(Array.from(input.files));
+      await ingestFiles(files);
     } finally {
       resetCompressProgress();
       uploadProcessing = false;
@@ -798,7 +805,7 @@
     const files = Array.from(input.files);
     input.value = '';
     addingTracks = true;
-    resetCompressProgress();
+    initCompressBatch(files);
 
     try {
       const added = await ingestFiles(files);
@@ -823,7 +830,7 @@
     const files = Array.from(input.files);
     input.value = '';
     addingTracks = true;
-    resetCompressProgress();
+    initCompressBatch(files);
 
     try {
       for (let idx = 0; idx < files.length; idx++) {
@@ -1322,21 +1329,25 @@
 {#snippet transcodePhaseRails()}
   <div class="buffer-meters phase-rails transcode-rails">
     <div class="phase-rail-spine" aria-hidden="true"></div>
-    <div class="phase-rail-row">
-      <span class="phase-tag">TRK {compressTrackIndex}/{compressTrackTotal}</span>
-      <div
-        class="phase-rail-bar"
-        class:charged={Math.round(transcodeTrackTween.current) >= 100}
-        class:empty={Math.round(transcodeTrackTween.current) === 0}
-      >
-        <div class="phase-rail-fill" style="width: {transcodeTrackTween.current}%"></div>
-        <div class="phase-rail-scanlines" aria-hidden="true"></div>
-        <div class="phase-rail-overlay">
-          <span class="phase-name">{autoCompressMp3 ? 'MP3_128K // ENCODE' : 'INGEST // PARSE'}</span>
-          <span class="phase-pct">{Math.round(transcodeTrackTween.current)}%</span>
+    {#each compressTracks as trk, i (i)}
+      <div class="phase-rail-row">
+        <span class="phase-tag">TRK {String(i + 1).padStart(2, '0')}</span>
+        <div
+          class="phase-rail-bar"
+          class:charged={trk.pct >= 100}
+          class:empty={trk.pct === 0}
+        >
+          <div class="phase-rail-fill" style="width: {trk.pct}%"></div>
+          <div class="phase-rail-scanlines" aria-hidden="true"></div>
+          <div class="phase-rail-overlay">
+            <span class="phase-name">{trk.name.replace(/\.[^/.]+$/, '').slice(0, 28)}</span>
+            <span class="phase-pct">
+              {trk.status === 'queued' ? 'QUEUED' : trk.pct >= 100 ? '100% OK' : `${trk.pct}%`}
+            </span>
+          </div>
         </div>
       </div>
-    </div>
+    {/each}
     <div class="phase-rail-row">
       <span class="phase-tag">BATCH</span>
       <div
@@ -1347,7 +1358,9 @@
         <div class="phase-rail-fill" style="width: {transcodeBatchTween.current}%"></div>
         <div class="phase-rail-scanlines" aria-hidden="true"></div>
         <div class="phase-rail-overlay">
-          <span class="phase-name">{compressFileName ? compressFileName.slice(0, 22) : 'QUEUE'}</span>
+          <span class="phase-name">
+            TOTAL_QUEUE // {compressTracks.length} {compressTracks.length === 1 ? 'TRACK' : 'TRACKS'}
+          </span>
           <span class="phase-pct">{Math.round(transcodeBatchTween.current)}%</span>
         </div>
       </div>
