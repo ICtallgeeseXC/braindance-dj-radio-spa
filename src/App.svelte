@@ -540,31 +540,43 @@
     compressTrackTotal = files.length;
 
     for (let idx = 0; idx < files.length; idx++) {
-      let file = files[idx];
+      const origFile = files[idx];
+      let file = origFile;
       compressTrackIndex = idx + 1;
-      compressFileName = file.name;
+      compressFileName = origFile.name;
       compressTrackPct = 0;
       compressBatchPct = Math.round((idx / files.length) * 100);
-      compressStatus = `Processing track ${idx + 1}/${files.length}: ${file.name}...`;
+      compressStatus = `Processing track ${idx + 1}/${files.length}: ${origFile.name}...`;
+
+      // Parse metadata from original file before transcoding strips ID3/FLAC tags
+      const origMeta = await parseAudioFile(origFile);
 
       // If auto-compress is enabled and file is not already a small mp3
       if (autoCompressMp3) {
         try {
           compressStatus = `Transcoding ${idx + 1}/${files.length} to 128k MP3... 0%`;
-          file = await compressAudioTo128kMp3(file, file.name, (pct) => {
+          file = await compressAudioTo128kMp3(origFile, origFile.name, (pct) => {
             compressTrackPct = pct;
             compressBatchPct = Math.round(((idx + pct / 100) / files.length) * 100);
             compressStatus = `Transcoding ${idx + 1}/${files.length} to 128k MP3... ${pct}%`;
           });
         } catch (err) {
-          console.warn(`[DJ Compressor] Failed to transcode ${file.name}, using original:`, err);
+          console.warn(`[DJ Compressor] Failed to transcode ${origFile.name}, using original:`, err);
         }
       }
 
       compressTrackPct = 100;
       compressBatchPct = Math.round(((idx + 1) / files.length) * 100);
 
-      const meta = await parseAudioFile(file);
+      const encodedMeta = file === origFile ? origMeta : await parseAudioFile(file);
+      const meta = {
+        ...encodedMeta,
+        title: origMeta.title,
+        artist: origMeta.artist,
+        album: origMeta.album,
+        coverUrl: origMeta.coverUrl,
+        duration: encodedMeta.duration || origMeta.duration
+      };
       const trackId = 't_' + Math.random().toString(36).substring(2, 9);
       const manifest: TrackManifest = {
         trackId,
