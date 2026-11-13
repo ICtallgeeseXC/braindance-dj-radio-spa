@@ -5,6 +5,7 @@ import { getSyncedTime } from './time-sync';
 import type { StationState } from './p2p-mesh';
 import { getTrackFromCache, saveTrackToCache } from './audio-cache';
 import { getTrackFromDisk } from './audio-storage';
+import { buildAudioLookahead, type LookaheadTimeline } from './audio-lookahead';
 
 export interface AudioVisualData {
   freq: Uint8Array;
@@ -14,6 +15,8 @@ export interface AudioVisualData {
   rightFreq: Uint8Array;
   rightTime: Uint8Array;
   sampleRate: number;
+  lookahead?: LookaheadTimeline | null;
+  currentTime?: number;
 }
 
 export class PlayerController {
@@ -38,6 +41,9 @@ export class PlayerController {
   private ownedBlobUrl: string | null = null;
   private errorRetryCount: number = 0;
   private syncTimer: any = null;
+  private lookaheadTimeline: LookaheadTimeline | null = null;
+  private lookaheadTrackId: string | null = null;
+  private lookaheadToken: number = 0;
   
   public currentTrackId: string | null = null;
   public nextTrackId: string | null = null;
@@ -307,8 +313,35 @@ export class PlayerController {
       leftTime: this.leftTimeData,
       rightFreq: this.rightFreqData,
       rightTime: this.rightTimeData,
-      sampleRate: this.audioContext?.sampleRate || 44100
+      sampleRate: this.audioContext?.sampleRate || 44100,
+      lookahead: this.lookaheadTrackId === this.currentTrackId ? this.lookaheadTimeline : null,
+      currentTime: this.audioElement.currentTime
     };
+  }
+
+  private async prepareLookahead(trackId: string, sourceBlob?: Blob | null) {
+    if (this.lookaheadTrackId === trackId && this.lookaheadTimeline) return;
+    const token = ++this.lookaheadToken;
+    this.lookaheadTrackId = trackId;
+    this.lookaheadTimeline = null;
+
+    let blob: Blob | null = sourceBlob || null;
+    if (!blob) {
+      const disk = await getTrackFromDisk(trackId);
+      if (disk?.blob) blob = disk.blob;
+    }
+    if (!blob && this.audioElement.src?.startsWith('blob:')) {
+      try {
+        const res = await fetch(this.audioElement.src);
+        if (res.ok) blob = await res.blob();
+      } catch {}
+    }
+    if (!blob || this.lookaheadToken !== token) return;
+
+    const timeline = await buildAudioLookahead(blob, this.audioContext, () => this.lookaheadToken !== token);
+    if (timeline && this.lookaheadToken === token) {
+      this.lookaheadTimeline = timeline;
+    }
   }
 
   private setOwnedBlobSource(blob: Blob): string {
@@ -357,6 +390,7 @@ export class PlayerController {
     }
     this.audioElement.src = this.setOwnedBlobSource(file);
     if (this.onTrackChange) this.onTrackChange(manifest);
+    this.prepareLookahead(manifest.trackId, file);
     this.syncPlaybackPosition();
     return this.audioElement.play();
   }
@@ -628,6 +662,9 @@ export class PlayerController {
 
     console.log(`[Player] Mounting current track: ${this.currentTrackBuffer.manifest.title}`);
     this.attachSource(this.currentTrackBuffer.blobUrl);
+    if (this.currentTrackBuffer.isComplete) {
+      this.prepareLookahead(this.currentTrackBuffer.manifest.trackId);
+    }
   }
 
   private attachSource(url: string) {

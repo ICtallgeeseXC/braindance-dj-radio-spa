@@ -408,11 +408,23 @@
     if (now - lastWaveRenderAt >= 32) {
       lastWaveRenderAt = now;
 
-      // Sample real-time audio spectrum
+      // Sample real-time audio spectrum (or pre-decoded lookahead timeline synced to midline)
       const audioData = getAudioData ? getAudioData() : null;
+      const exactMidIndex = (HISTORY_LEN - 1) * (116 / 233);
 
-      if (audioData && audioData.freq) {
-        // 2. Compute instantaneous scalar X for each channel and push to history buffer
+      if (audioData && audioData.lookahead && audioData.lookahead.frames > 0) {
+        const la = audioData.lookahead;
+        const curSec = typeof audioData.currentTime === 'number' ? audioData.currentTime : estAudio;
+        const midFrame = curSec * la.fps;
+        for (let i = 0; i < CHANNELS.length; i++) {
+          const buf = historyBuffers[i];
+          for (let k = 0; k < HISTORY_LEN; k++) {
+            const frameIdx = Math.round(midFrame + (exactMidIndex - k));
+            buf[k] = frameIdx >= 0 && frameIdx < la.frames ? la.data[frameIdx * 7 + i] : -24;
+          }
+        }
+      } else if (audioData && audioData.freq) {
+        // Fallback live AnalyserNode waterfall while lookahead is decoding
         for (let i = 0; i < CHANNELS.length; i++) {
           const targetOffset = computeInstantChannelOffset(i, audioData);
           smoothedX[i] = smoothedX[i] * 0.22 + targetOffset * 0.78;
@@ -435,7 +447,6 @@
       }
 
       // 4. Update Midline Telemetry "X: ..." values & Dynamic Color (only when changed)
-      const exactMidIndex = (HISTORY_LEN - 1) * (116 / 233);
       const i0 = Math.floor(exactMidIndex);
       const i1 = Math.min(HISTORY_LEN - 1, i0 + 1);
       const frac = exactMidIndex - i0;
