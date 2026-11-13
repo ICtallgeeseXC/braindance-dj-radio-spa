@@ -21,6 +21,46 @@
 
   let showRemaining = $state(true);
 
+  type VisMode = 'off' | 'lo' | 'hi';
+  let visMode = $state<VisMode>(
+    (typeof localStorage !== 'undefined' && (localStorage.getItem('p2p_vis_mode') as VisMode)) || 'lo'
+  );
+  let wasVisOff = false;
+
+  function cycleVisMode() {
+    visMode = visMode === 'lo' ? 'hi' : visMode === 'hi' ? 'off' : 'lo';
+    try { localStorage.setItem('p2p_vis_mode', visMode); } catch {}
+    if (visMode === 'off') {
+      resetWavesToBaseline();
+      wasVisOff = true;
+    } else {
+      wasVisOff = false;
+      lastWaveRenderAt = 0;
+    }
+  }
+
+  function resetWavesToBaseline() {
+    for (let i = 0; i < CHANNELS.length; i++) {
+      smoothedX[i] = -24;
+      historyBuffers[i].fill(-24);
+      const pathEl = wavePaths[i];
+      if (pathEl) {
+        const cx = 20 + i * 112 + 52;
+        pathEl.setAttribute('d', buildWavePath(i, cx));
+      }
+      const groupEl = chanGroups[i];
+      if (groupEl && lastIsBlue[i]) {
+        groupEl.classList.remove('is-blue');
+        lastIsBlue[i] = false;
+      }
+      const textEl = telemetryTexts[i];
+      if (textEl && lastTelemetryStr[i] !== 'X: -9.99') {
+        textEl.textContent = 'X: -9.99';
+        lastTelemetryStr[i] = 'X: -9.99';
+      }
+    }
+  }
+
   // Channel definitions matching reference screenshots
   interface ChannelDef {
     id: string;
@@ -371,25 +411,7 @@
 
       if (!wasIdle) {
         wasIdle = true;
-        for (let i = 0; i < CHANNELS.length; i++) {
-          smoothedX[i] = -24;
-          historyBuffers[i].fill(-24);
-          const pathEl = wavePaths[i];
-          if (pathEl) {
-            const cx = 20 + i * 112 + 52;
-            pathEl.setAttribute('d', buildWavePath(i, cx));
-          }
-          const groupEl = chanGroups[i];
-          if (groupEl && lastIsBlue[i]) {
-            groupEl.classList.remove('is-blue');
-            lastIsBlue[i] = false;
-          }
-          const textEl = telemetryTexts[i];
-          if (textEl && lastTelemetryStr[i] !== 'X: -9.99') {
-            textEl.textContent = 'X: -9.99';
-            lastTelemetryStr[i] = 'X: -9.99';
-          }
-        }
+        resetWavesToBaseline();
       }
       rafId = null;
       return;
@@ -404,8 +426,18 @@
     // 1. Update 7-Segment Digital Clock with Shadow 8s
     applyDigits(computeDisplaySecs(estAudio));
 
-    // Cap waveform SVG path rebuilds at ~30fps to prevent SVG/WebRender lag on macOS Retina
-    if (now - lastWaveRenderAt >= 32) {
+    if (visMode === 'off') {
+      if (!wasVisOff) {
+        wasVisOff = true;
+        resetWavesToBaseline();
+      }
+      rafId = requestAnimationFrame(tick);
+      return;
+    }
+    wasVisOff = false;
+
+    const minWaveInterval = visMode === 'hi' ? 0 : 28;
+    if (minWaveInterval === 0 || now - lastWaveRenderAt >= minWaveInterval) {
       lastWaveRenderAt = now;
 
       // Sample real-time audio spectrum
@@ -542,6 +574,29 @@
 
     <!-- Top Left Header: "AUDIOVISUAL" in bright electric orange -->
     <text x="18" y="30" class="audiovisual-title">AUDIOVISUAL</text>
+
+    <!-- Visualizer Mode Toggle (OFF / LO / HI) -->
+    <g
+      transform="translate(248, 13)"
+      class="vis-mode-toggle"
+      class:is-hi={visMode === 'hi'}
+      class:is-off={visMode === 'off'}
+      role="button"
+      tabindex="0"
+      onclick={cycleVisMode}
+      onkeydown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          cycleVisMode();
+        }
+      }}
+      aria-label="Visualizer Mode: {visMode.toUpperCase()} (click to switch OFF, LO, HI)"
+    >
+      <rect x="0" y="0" width="76" height="20" rx="2" class="vis-mode-box" />
+      <text x="38" y="13.5" text-anchor="middle" class="vis-mode-text">
+        VIS: {visMode.toUpperCase()}
+      </text>
+    </g>
 
     <!-- Top Right 7-Segment Digital Clock (MM:SS:CC) with Shadow Digital 8s -->
     <!-- Clickable to toggle between Remaining and Elapsed time -->
@@ -820,11 +875,13 @@
     {/each}
 
     <!-- CRT Scan Line Effect Sweep Beam matching Buffer Loader -->
-    <line x1="2" y1="2" x2="2" y2="318" stroke="#ff7700" stroke-width="1.8" opacity="0.55" class="scan-beam">
-      <animate attributeName="x1" values="2;878;2" dur="4.5s" repeatCount="indefinite" />
-      <animate attributeName="x2" values="2;878;2" dur="4.5s" repeatCount="indefinite" />
-      <animate attributeName="opacity" values="0.7;0.18;0.7" dur="4.5s" repeatCount="indefinite" />
-    </line>
+    {#if visMode !== 'off'}
+      <line x1="2" y1="2" x2="2" y2="318" stroke="#ff7700" stroke-width="1.8" opacity="0.55" class="scan-beam">
+        <animate attributeName="x1" values="2;878;2" dur="4.5s" repeatCount="indefinite" />
+        <animate attributeName="x2" values="2;878;2" dur="4.5s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.7;0.18;0.7" dur="4.5s" repeatCount="indefinite" />
+      </line>
+    {/if}
   </svg>
 
   <!-- Sleek Interactive Seek Scrubber Bar at Bottom -->
@@ -891,6 +948,40 @@
     max-height: 310px;
     display: block;
     overflow: visible;
+  }
+
+  .vis-mode-toggle {
+    cursor: pointer;
+    outline: none;
+  }
+  .vis-mode-box {
+    fill: rgba(255, 119, 0, 0.12);
+    stroke: #ff7700;
+    stroke-width: 1.2;
+  }
+  .vis-mode-text {
+    fill: #ff9922;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  .vis-mode-toggle.is-hi .vis-mode-box {
+    fill: rgba(0, 212, 255, 0.14);
+    stroke: #00d4ff;
+  }
+  .vis-mode-toggle.is-hi .vis-mode-text {
+    fill: #00d4ff;
+  }
+  .vis-mode-toggle.is-off .vis-mode-box {
+    fill: rgba(120, 40, 20, 0.18);
+    stroke: rgba(255, 119, 0, 0.4);
+  }
+  .vis-mode-toggle.is-off .vis-mode-text {
+    fill: rgba(255, 119, 0, 0.55);
+  }
+  .vis-mode-toggle:hover .vis-mode-box {
+    stroke-width: 1.8;
   }
 
   /* Header Typography matching reference image */
