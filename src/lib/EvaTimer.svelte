@@ -941,6 +941,8 @@
   }
 
   .vis-top-bar {
+    position: relative;
+    z-index: 10;
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -948,13 +950,17 @@
   }
 
   .vis-mode-pill {
+    position: relative;
+    z-index: 10;
     font-family: 'Share Tech Mono', monospace;
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.08em;
     padding: 3px 10px;
     border-radius: 2px;
-    cursor: pointer;
+    cursor: pointer !important;
+    user-select: none;
+    -webkit-user-select: none;
     background: rgba(0, 212, 255, 0.14);
     color: #00d4ff;
     border: 1px solid #00d4ff;
