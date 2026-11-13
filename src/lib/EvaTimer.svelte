@@ -57,6 +57,12 @@
   // Pre-allocated static digit strings for 0 garbage collection
   const DIGIT_STRS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
+  // Track idle / throttle state to avoid redundant SVG DOM writes on macOS/Gecko
+  let wasIdle = false;
+  let lastWaveRenderAt = 0;
+  const lastTelemetryStr: string[] = new Array(7).fill('');
+  const lastIsBlue: boolean[] = new Array(7).fill(false);
+
   // Cache last rendered digit values so DOM attributes are only touched when changed
   let lastM1 = -1;
   let lastM2 = -1;
@@ -346,100 +352,136 @@
 
   function tick() {
     if (document.hidden) {
-      rafId = requestAnimationFrame(tick);
+      if (isPlaying && isAudioActuallyPlaying) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        rafId = null;
+      }
       return;
     }
 
     const now = performance.now();
-    frameCounter++;
-
     const active = isPlaying && isAudioActuallyPlaying;
-    let estAudio: number;
-    if (active) {
-      const elapsed = Math.max(0, (now - basePerfTime) / 1000);
-      estAudio = Math.min(Math.max(0, duration), baseAudioTime + elapsed);
-    } else {
-      estAudio = Math.min(Math.max(0, duration), currentTime);
+
+    if (!active) {
+      const estAudio = Math.min(Math.max(0, duration), currentTime);
       baseAudioTime = currentTime;
       basePerfTime = now;
+      applyDigits(computeDisplaySecs(estAudio));
+
+      if (!wasIdle) {
+        wasIdle = true;
+        for (let i = 0; i < CHANNELS.length; i++) {
+          smoothedX[i] = -24;
+          historyBuffers[i].fill(-24);
+          const pathEl = wavePaths[i];
+          if (pathEl) {
+            const cx = 20 + i * 112 + 52;
+            pathEl.setAttribute('d', buildWavePath(i, cx));
+          }
+          const groupEl = chanGroups[i];
+          if (groupEl && lastIsBlue[i]) {
+            groupEl.classList.remove('is-blue');
+            lastIsBlue[i] = false;
+          }
+          const textEl = telemetryTexts[i];
+          if (textEl && lastTelemetryStr[i] !== 'X: -9.99') {
+            textEl.textContent = 'X: -9.99';
+            lastTelemetryStr[i] = 'X: -9.99';
+          }
+        }
+      }
+      rafId = null;
+      return;
     }
 
-    // 1. Update 60Hz 7-Segment Digital Clock with Shadow 8s
+    wasIdle = false;
+    frameCounter++;
+
+    const elapsed = Math.max(0, (now - basePerfTime) / 1000);
+    const estAudio = Math.min(Math.max(0, duration), baseAudioTime + elapsed);
+
+    // 1. Update 7-Segment Digital Clock with Shadow 8s
     applyDigits(computeDisplaySecs(estAudio));
 
-    // Sample real-time audio spectrum
-    const audioData = active && getAudioData ? getAudioData() : null;
+    // Cap waveform SVG path rebuilds at ~30fps to prevent SVG/WebRender lag on macOS Retina
+    if (now - lastWaveRenderAt >= 32) {
+      lastWaveRenderAt = now;
 
-    if (active && audioData && audioData.freq) {
-      // 2. Compute instantaneous scalar X for each channel and push to history buffer (dynamic waterfall downwards)
-      for (let i = 0; i < CHANNELS.length; i++) {
-        const targetOffset = computeInstantChannelOffset(i, audioData);
-        // Fast, crisp response (78% direct tracking) to capture dynamic peaks and valleys matching reference image 2
-        smoothedX[i] = smoothedX[i] * 0.22 + targetOffset * 0.78;
+      // Sample real-time audio spectrum
+      const audioData = getAudioData ? getAudioData() : null;
 
-        // Shift history buffer downwards
-        const buf = historyBuffers[i];
-        for (let k = HISTORY_LEN - 1; k > 0; k--) {
-          buf[k] = buf[k - 1];
+      if (audioData && audioData.freq) {
+        // 2. Compute instantaneous scalar X for each channel and push to history buffer
+        for (let i = 0; i < CHANNELS.length; i++) {
+          const targetOffset = computeInstantChannelOffset(i, audioData);
+          smoothedX[i] = smoothedX[i] * 0.22 + targetOffset * 0.78;
+
+          const buf = historyBuffers[i];
+          for (let k = HISTORY_LEN - 1; k > 0; k--) {
+            buf[k] = buf[k - 1];
+          }
+          buf[0] = smoothedX[i];
         }
-        buf[0] = smoothedX[i];
       }
-    } else {
-      // Resting baseline when paused, stopped, or inactive: ALL channels reset to left baseline (-24px = -9.99)
+
+      // 3. Render waveform paths for all 7 channels
       for (let i = 0; i < CHANNELS.length; i++) {
-        smoothedX[i] = -24;
-        historyBuffers[i].fill(-24);
-      }
-    }
-
-    // 3. Render smooth 60Hz waveform paths for all 7 channels
-    for (let i = 0; i < CHANNELS.length; i++) {
-      const pathEl = wavePaths[i];
-      if (pathEl) {
-        const cx = 20 + i * 112 + 52;
-        const d = buildWavePath(i, cx);
-        pathEl.setAttribute('d', d);
-      }
-    }
-
-    // 4. Update Midline Telemetry "X: ..." values & Dynamic Color (Blue ONLY if X > 0 at midline)
-    // The midline is at y = 178 (fraction 116 / 233)
-    const exactMidIndex = (HISTORY_LEN - 1) * (116 / 233);
-    const i0 = Math.floor(exactMidIndex);
-    const i1 = Math.min(HISTORY_LEN - 1, i0 + 1);
-    const frac = exactMidIndex - i0;
-
-    for (let i = 0; i < CHANNELS.length; i++) {
-      const textEl = telemetryTexts[i];
-      const groupEl = chanGroups[i];
-
-      if (!active || !audioData || !audioData.freq) {
-        if (groupEl) groupEl.classList.remove('is-blue');
-        if (textEl) textEl.textContent = 'X: -9.99';
-        continue;
+        const pathEl = wavePaths[i];
+        if (pathEl) {
+          const cx = 20 + i * 112 + 52;
+          pathEl.setAttribute('d', buildWavePath(i, cx));
+        }
       }
 
-      const buf = historyBuffers[i];
-      const midOffset = buf[i0] * (1 - frac) + buf[i1] * frac;
-      const clampedMid = Math.max(-24, Math.min(24, midOffset));
+      // 4. Update Midline Telemetry "X: ..." values & Dynamic Color (only when changed)
+      const exactMidIndex = (HISTORY_LEN - 1) * (116 / 233);
+      const i0 = Math.floor(exactMidIndex);
+      const i1 = Math.min(HISTORY_LEN - 1, i0 + 1);
+      const frac = exactMidIndex - i0;
 
-      // Rescaled: -24px = -9.99, 0px = 0.00, +24px = +9.99
-      const xVal = (clampedMid / 24) * 9.99;
-      const isBlue = xVal > 0;
+      for (let i = 0; i < CHANNELS.length; i++) {
+        const textEl = telemetryTexts[i];
+        const groupEl = chanGroups[i];
 
-      if (groupEl) {
-        groupEl.classList.toggle('is-blue', isBlue);
-      }
+        if (!audioData || !audioData.freq) {
+          if (groupEl && lastIsBlue[i]) {
+            groupEl.classList.remove('is-blue');
+            lastIsBlue[i] = false;
+          }
+          if (textEl && lastTelemetryStr[i] !== 'X: -9.99') {
+            textEl.textContent = 'X: -9.99';
+            lastTelemetryStr[i] = 'X: -9.99';
+          }
+          continue;
+        }
 
-      if (textEl && frameCounter % 2 === 0) {
-        if (clampedMid <= -23.95) {
-          textEl.textContent = 'X: -9.99';
-        } else if (clampedMid >= 23.95) {
-          textEl.textContent = 'X: +9.99';
-        } else if (xVal > 0) {
-          textEl.textContent = `X: +${xVal.toFixed(2)}`;
-        } else {
-          textEl.textContent = `X: ${xVal.toFixed(2)}`;
+        const buf = historyBuffers[i];
+        const midOffset = buf[i0] * (1 - frac) + buf[i1] * frac;
+        const clampedMid = Math.max(-24, Math.min(24, midOffset));
+        const xVal = (clampedMid / 24) * 9.99;
+        const isBlue = xVal > 0;
+
+        if (groupEl && lastIsBlue[i] !== isBlue) {
+          groupEl.classList.toggle('is-blue', isBlue);
+          lastIsBlue[i] = isBlue;
+        }
+
+        if (textEl) {
+          let nextStr: string;
+          if (clampedMid <= -23.95) {
+            nextStr = 'X: -9.99';
+          } else if (clampedMid >= 23.95) {
+            nextStr = 'X: +9.99';
+          } else if (xVal > 0) {
+            nextStr = `X: +${xVal.toFixed(2)}`;
+          } else {
+            nextStr = `X: ${xVal.toFixed(2)}`;
+          }
+          if (lastTelemetryStr[i] !== nextStr) {
+            textEl.textContent = nextStr;
+            lastTelemetryStr[i] = nextStr;
+          }
         }
       }
     }
@@ -461,8 +503,15 @@
   }
 
   $effect(() => {
-    startLoop();
-    return () => stopLoop();
+    // Re-trigger loop or single idle render whenever playback/time/mode props change
+    void currentTime;
+    void duration;
+    void isPlaying;
+    void isAudioActuallyPlaying;
+    void showRemaining;
+    if (rafId === null) {
+      startLoop();
+    }
   });
 
   onDestroy(() => {
@@ -943,13 +992,11 @@
   .seg-digit:global([data-d="9"]) .sg {
     fill: var(--lit-fill);
     stroke: var(--lit-stroke);
-    stroke-width: 0.6;
-    filter: drop-shadow(0 0 3px var(--lit-glow));
+    stroke-width: 0.7;
   }
 
   .colon-dot {
     fill: var(--lit-fill);
-    filter: drop-shadow(0 0 2px var(--lit-glow));
   }
 
   /* 7-Channel Dynamic Coloring (Electric Orange by default, Electric Cyan when X > 0) */

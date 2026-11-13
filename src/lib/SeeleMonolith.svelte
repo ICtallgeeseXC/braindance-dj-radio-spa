@@ -268,8 +268,8 @@
     height: 100%;
     max-height: 100%;
     display: block;
-    filter: drop-shadow(0 0 14px rgba(0, 0, 0, 0.95));
-    transition: filter 0.4s ease;
+    filter: drop-shadow(0 0 12px rgba(255, 10, 40, 0.3));
+    will-change: opacity, transform;
   }
 
   .seele-monolith-container.is-playing .monolith-svg {
@@ -278,10 +278,12 @@
 
   @keyframes monolith-pulse {
     0%, 100% {
-      filter: drop-shadow(0 0 14px rgba(255, 10, 40, 0.35)) drop-shadow(0 0 24px rgba(255, 60, 0, 0.15));
+      opacity: 0.88;
+      transform: scale(1);
     }
     50% {
-      filter: drop-shadow(0 0 20px rgba(255, 10, 40, 0.65)) drop-shadow(0 0 32px rgba(255, 70, 0, 0.3));
+      opacity: 1;
+      transform: scale(1.012);
     }
   }
 </style>

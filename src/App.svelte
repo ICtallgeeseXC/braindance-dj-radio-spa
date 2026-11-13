@@ -104,11 +104,16 @@
     player = new PlayerController();
 
     // Register Player listeners
+    let lastBufferUiUpdate = 0;
     player.onBufferProgress = (cur, next) => {
       if (mode === 'listener') {
-        currentBufferProgress = cur;
-        nextBufferProgress = next;
         mesh?.reportBufferProgress(cur);
+        const now = performance.now();
+        if (cur === 0 || cur >= 100 || now - lastBufferUiUpdate >= 150) {
+          lastBufferUiUpdate = now;
+          currentBufferProgress = cur;
+          nextBufferProgress = next;
+        }
       }
     };
 

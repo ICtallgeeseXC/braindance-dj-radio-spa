@@ -331,7 +331,6 @@
     fill: #ff7b00;
     stroke: #ffa000;
     stroke-width: 1;
-    filter: drop-shadow(0 0 3px rgba(255, 123, 0, 0.65));
   }
 
   .chev-bar.current {
@@ -342,8 +341,8 @@
   }
 
   @keyframes pulse-current {
-    0% { fill: #ff7b00; filter: drop-shadow(0 0 2px #ff7b00); }
-    100% { fill: #fff2a3; filter: drop-shadow(0 0 8px #ffbb00); }
+    0% { fill: #ff7b00; opacity: 0.65; }
+    100% { fill: #fff2a3; opacity: 1; }
   }
 
   .analysis-heading {
