@@ -215,6 +215,52 @@
     (typeof localStorage !== 'undefined' && (localStorage.getItem('p2p_vis_mode') as 'off' | 'lo' | 'hi')) || 'lo'
   );
 
+  // Start-page HARMONIC_SYNC oscilloscope animation
+  function buildOscWavePath(amp: number, cycles: number, phaseRad: number): string {
+    let d = '';
+    for (let x = 0; x <= 260; x += 6) {
+      const y = 38 + amp * Math.sin((x / 260) * Math.PI * 2 * cycles + phaseRad);
+      d += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(1)}`;
+    }
+    return d;
+  }
+
+  let oscPrimaryPath = $state<string>(buildOscWavePath(21, 2, 0));
+  let oscSecondaryPath = $state<string>(buildOscWavePath(-20, 2, 0));
+  let oscCarrierPath = $state<string>(buildOscWavePath(11, 1, 0));
+  let oscPhaseLabel = $state<string>('+0.00');
+
+  $effect(() => {
+    if (mode !== 'select') return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    let rafId = 0;
+    let lastFrame = 0;
+    const startMs = performance.now();
+
+    const step = (now: number) => {
+      if (now - lastFrame >= 22) {
+        lastFrame = now;
+        const t = (now - startMs) * 0.001;
+        const drift = 0.42 * Math.sin(t * 0.75);
+        const ampPrimary = 19.5 + 2.5 * Math.sin(t * 1.3);
+        const ampSecondary = -(18.5 + 2.5 * Math.cos(t * 1.1));
+        const ampCarrier = 10.5 + 2.0 * Math.sin(t * 0.9 + 1.0);
+
+        oscPrimaryPath = buildOscWavePath(ampPrimary, 2, -t * 2.6);
+        oscSecondaryPath = buildOscWavePath(ampSecondary, 2, -t * 2.6 + drift);
+        oscCarrierPath = buildOscWavePath(ampCarrier, 1, t * 1.35);
+        oscPhaseLabel = `${drift >= 0 ? '+' : ''}${drift.toFixed(2)}`;
+      }
+      rafId = requestAnimationFrame(step);
+    };
+
+    rafId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafId);
+  });
+
   interface PendingInjectTrack {
     manifest: TrackManifest;
     chunks: (Uint8Array | null)[];
@@ -1584,7 +1630,7 @@
             <div class="hero-oscilloscope" aria-hidden="true">
               <div class="osc-header">
                 <span>HARMONIC_SYNC // 波形同期</span>
-                <span class="osc-val">PHASE: +0.00</span>
+                <span class="osc-val">PHASE: {oscPhaseLabel}</span>
               </div>
               <svg viewBox="0 0 260 76" class="osc-svg" preserveAspectRatio="none">
                 <defs>
@@ -1597,7 +1643,7 @@
                 <line x1="130" y1="0" x2="130" y2="76" stroke="rgba(255, 119, 0, 0.25)" stroke-width="0.8" />
                 <!-- Secondary red/magenta harmonic -->
                 <path
-                  d="M0,38 Q32,8 65,38 T130,38 T195,38 T260,38"
+                  d={oscSecondaryPath}
                   fill="none"
                   stroke="#ff2a4d"
                   stroke-width="1.4"
@@ -1605,7 +1651,7 @@
                 />
                 <!-- Primary phosphor green harmonic -->
                 <path
-                  d="M0,38 Q32,68 65,38 T130,38 T195,38 T260,38"
+                  d={oscPrimaryPath}
                   fill="none"
                   stroke="#39ff6a"
                   stroke-width="1.6"
@@ -1613,7 +1659,7 @@
                 />
                 <!-- Carrier amber envelope -->
                 <path
-                  d="M0,38 C45,18 85,58 130,38 C175,18 215,58 260,38"
+                  d={oscCarrierPath}
                   fill="none"
                   stroke="#ff8800"
                   stroke-width="1.2"
@@ -2915,6 +2961,7 @@
   .osc-val {
     color: #ff2a4d;
     font-weight: bold;
+    font-variant-numeric: tabular-nums;
   }
 
   .osc-ok {
