@@ -2017,11 +2017,15 @@
   }
 
   .station-title {
-    font-weight: 800;
-    font-family: var(--font-display);
-    font-size: 0.96rem;
-    color: var(--text-primary);
-    letter-spacing: 0.1em;
+    font-weight: 700;
+    font-family: "Times New Roman", "Noto Serif JP", Georgia, serif;
+    font-size: 1.08rem;
+    color: #fff8ea;
+    letter-spacing: 0.04em;
+    text-shadow:
+      0 0 6px rgba(255, 240, 200, 0.72),
+      0 0 16px rgba(255, 185, 85, 0.45),
+      0 0 30px rgba(255, 120, 20, 0.25);
   }
 
   .role-tag {
@@ -2195,12 +2199,17 @@
 
   .track-title {
     margin: 0 0 4px 0;
-    font-family: var(--font-display);
-    font-size: clamp(1.15rem, 2.2vw, 1.5rem);
-    font-weight: 800;
-    color: var(--text-primary);
-    letter-spacing: 0.04em;
+    font-family: "Times New Roman", "Noto Serif JP", Georgia, serif;
+    font-size: clamp(1.38rem, 2.6vw, 1.85rem);
+    font-weight: 700;
+    color: #fff8ea;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
     overflow-wrap: break-word;
+    text-shadow:
+      0 0 7px rgba(255, 242, 205, 0.78),
+      0 0 20px rgba(255, 188, 90, 0.5),
+      0 0 38px rgba(255, 120, 20, 0.28);
   }
 
   .track-artist {
