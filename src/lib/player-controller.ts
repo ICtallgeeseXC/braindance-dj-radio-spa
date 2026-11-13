@@ -656,7 +656,17 @@ export class PlayerController {
   }
 
   public syncPlaybackPosition(isInitialSeek = false) {
-    if (!this.isPlaying || !this.stationStartedAt || !this.audioElement.src) return;
+    if (!this.audioElement.src) return;
+
+    if (!this.isPlaying) {
+      if (!this.audioElement.paused) {
+        this.audioElement.playbackRate = 1.0;
+        this.audioElement.pause();
+      }
+      return;
+    }
+
+    if (!this.stationStartedAt) return;
 
     const now = getSyncedTime();
     const targetOffset = Math.max(0, (now - this.stationStartedAt) / 1000);
