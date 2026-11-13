@@ -605,6 +605,8 @@
       }}
       aria-label="Toggle Countdown / Elapsed Digital Timer"
     >
+      <!-- Full bounding-box hit area so gaps between segments are clickable -->
+      <rect x="-6" y="-4" width="136" height="33" fill="transparent" />
       <!-- Minute 1 -->
       <g bind:this={m1Svg} class="seg-digit" transform="translate(0, 0) scale(0.48)" data-d="0">
         <polygon points="5,3 29,3 25,8 9,8" class="seg sa" />
@@ -865,7 +867,7 @@
     {/each}
 
     <!-- CRT Scan Line Effect Sweep Beam matching Buffer Loader -->
-    {#if visMode !== 'off'}
+    {#if visMode !== 'off' && isPlaying && isAudioActuallyPlaying}
       <line x1="2" y1="2" x2="2" y2="318" stroke="#ff7700" stroke-width="1.8" opacity="0.55" class="scan-beam">
         <animate attributeName="x1" values="2;878;2" dur="4.5s" repeatCount="indefinite" />
         <animate attributeName="x2" values="2;878;2" dur="4.5s" repeatCount="indefinite" />
