@@ -105,8 +105,15 @@ export class P2PMesh {
   public onRequestTrackChunks?: (targetPeerId: string, trackId: string, missingIndexes?: number[]) => void;
   public onGetMissingChunks?: () => { trackId: string; missingIndexes: number[] } | null;
   public onStationConflict?: (stationId: string) => void;
+  public onInjectAuthorized?: (authorized: boolean) => void;
+  public onInjectTrackInit?: (peerId: string, manifest: TrackManifest) => void;
+  public onInjectedChunkReceived?: (trackId: string, chunkIndex: number, totalChunks: number, data: ArrayBuffer) => void;
+  public onInjectTrackComplete?: (trackId: string) => void;
 
   private isPublicBroadcast = true;
+  private injectSecret = '';
+  private listenerInjectToken = '';
+  private authorizedInjectors = new Set<string>();
 
   private getCurrentTrackTitle(): string {
     const id = this.stationState?.currentTrackId;
@@ -175,12 +182,15 @@ export class P2PMesh {
     stationId: string,
     initialManifests: Record<string, TrackManifest>,
     playlistOrder: string[],
-    isPublic = true
+    isPublic = true,
+    injectSecret = ''
   ) {
     const cleanStationId = stationId.toLowerCase().trim();
     this.stationId = cleanStationId;
     this.isDJ = true;
     this.isPublicBroadcast = isPublic;
+    this.injectSecret = injectSecret;
+    this.authorizedInjectors.clear();
     this.depth = 0;
     this.currentParentId = null;
     this.hostToken = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
@@ -221,16 +231,56 @@ export class P2PMesh {
 
   // --- 2. Listener Mode: Join Station ---
 
-  public joinStation(stationId: string) {
+  public joinStation(stationId: string, injectToken = '') {
     this.stationId = stationId.toLowerCase().trim();
     this.isDJ = false;
     this.hasJoinedPyramid = false;
+    this.listenerInjectToken = injectToken.trim();
 
     const listenerId = 'peer_' + Math.random().toString(36).substring(2, 9);
     this.peerId = listenerId;
 
     this.initRelaySocket();
     this.initPeer(listenerId);
+  }
+
+  public sendControlToDJ(msg: any): boolean {
+    if (this.isDJ || !this.stationId) return false;
+    if (this.djControlConn && this.djControlConn.open) {
+      this.djControlConn.send(msg);
+      return true;
+    }
+    if (this.relayConnected) {
+      return this.sendViaRelay(`station-${this.stationId}-dj`, msg);
+    }
+    return false;
+  }
+
+  public sendInjectTrackInit(manifest: TrackManifest): boolean {
+    if (!this.listenerInjectToken) return false;
+    return this.sendControlToDJ({
+      type: 'inject_track_init',
+      token: this.listenerInjectToken,
+      manifest
+    });
+  }
+
+  public sendInjectChunkToDJ(trackId: string, chunkIndex: number, totalChunks: number, rawData: ArrayBuffer): boolean {
+    if (this.isDJ || !this.stationId) return false;
+    const packet = this.encodeChunkPacket(trackId, chunkIndex, totalChunks, rawData);
+    if (this.djControlConn && this.djControlConn.open) {
+      this.djControlConn.send(packet);
+      return true;
+    }
+    if (this.relayConnected) {
+      return this.sendBinaryViaRelay(`station-${this.stationId}-dj`, packet);
+    }
+    return false;
+  }
+
+  public notifyInjectComplete(peerId: string, trackId: string) {
+    if (!this.isDJ) return;
+    this.sendControlToListener(peerId, { type: 'inject_track_complete', trackId });
   }
 
   public reportBufferProgress(bufferPct: number) {
@@ -461,7 +511,9 @@ export class P2PMesh {
         data.type === 'request_join_pyramid' ||
         data.type === 'buffer_update' ||
         data.type === 'graceful_departure' ||
-        data.type === 'parent_unresponsive'
+        data.type === 'parent_unresponsive' ||
+        data.type === 'verify_inject' ||
+        data.type === 'inject_track_init'
       ) {
         this.handleListenerRequestToDJ(fromId, data);
       } else {
@@ -486,7 +538,9 @@ export class P2PMesh {
         data.type === 'dj_assignment' ||
         data.type === 'master_tree_update' ||
         data.type === 'station_state' ||
-        data.type === 'dj_station_closed'
+        data.type === 'dj_station_closed' ||
+        data.type === 'inject_authorized' ||
+        data.type === 'inject_track_complete'
       ) {
         this.handleDJControlMessage(data);
       } else if (data.type === 'relay_stream_ready') {
@@ -730,7 +784,14 @@ export class P2PMesh {
     conn.on('data', (data: any) => {
       const role = conn.metadata?.role;
       if (this.isDJ && role === 'control_channel') {
-        this.handleListenerRequestToDJ(remoteId, data);
+        if (data instanceof ArrayBuffer) {
+          this.handleBinaryChunk(data);
+        } else if (ArrayBuffer.isView(data)) {
+          const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+          this.handleBinaryChunk(buf);
+        } else {
+          this.handleListenerRequestToDJ(remoteId, data);
+        }
       } else if (role === 'swarm_channel') {
         if (!this.swarmConns.has(remoteId)) {
           this.swarmConns.set(remoteId, conn);
@@ -817,6 +878,22 @@ export class P2PMesh {
       } else {
         const existing = this.masterTreeMap.get(newcomerId);
         this.assignNewcomerToPyramid(newcomerId, existing?.transport || 'relay');
+      }
+    } else if (data.type === 'verify_inject') {
+      const ok = Boolean(this.injectSecret && typeof data.token === 'string' && data.token === this.injectSecret);
+      if (ok) {
+        this.authorizedInjectors.add(newcomerId);
+        this.log(`[CO-DJ] Authorized peer ${newcomerId} for track injection`);
+      }
+      this.sendControlToListener(newcomerId, { type: 'inject_authorized', authorized: ok });
+    } else if (data.type === 'inject_track_init') {
+      const ok = Boolean(
+        this.injectSecret &&
+        (this.authorizedInjectors.has(newcomerId) || (typeof data.token === 'string' && data.token === this.injectSecret))
+      );
+      if (ok && data.manifest?.trackId) {
+        this.authorizedInjectors.add(newcomerId);
+        this.onInjectTrackInit?.(newcomerId, data.manifest as TrackManifest);
       }
     }
   }
@@ -957,6 +1034,17 @@ export class P2PMesh {
 
       // Connect to assigned parent
       this.connectToAssignedParent(parentId, depth);
+
+      // Verify Co-DJ injection secret if present in URL hash
+      if (this.listenerInjectToken) {
+        this.sendControlToDJ({ type: 'verify_inject', token: this.listenerInjectToken });
+      }
+    } else if (data.type === 'inject_authorized') {
+      this.onInjectAuthorized?.(Boolean(data.authorized));
+    } else if (data.type === 'inject_track_complete') {
+      if (typeof data.trackId === 'string') {
+        this.onInjectTrackComplete?.(data.trackId);
+      }
     } else if (data.type === 'master_tree_update') {
       if (data.tree) {
         this.masterTreeMap = new Map(data.tree);
@@ -1558,6 +1646,12 @@ export class P2PMesh {
     const trackId = new TextDecoder().decode(new Uint8Array(data, 0, 32)).trim();
     const chunkIndex = view.getUint32(32, false);
     const totalChunks = view.getUint32(36, false);
+
+    if (this.isDJ) {
+      const audioData = data.slice(40);
+      this.onInjectedChunkReceived?.(trackId, chunkIndex, totalChunks, audioData);
+      return;
+    }
 
     // Track chunk reception metrics for buffer stall watchdog
     this.chunksReceivedSinceParentConnect++;

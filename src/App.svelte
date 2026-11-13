@@ -206,6 +206,37 @@
     const timer = setInterval(fetchPublicStations, 12000);
     return () => clearInterval(timer);
   });
+
+  // Co-DJ track injection invite secret (DJ) and token (Listener)
+  let injectSecret = $state<string>('');
+  let listenerInjectToken = $state<string>('');
+  let listenerCanInject = $state<boolean>(false);
+
+  interface PendingInjectTrack {
+    manifest: TrackManifest;
+    chunks: (Uint8Array | null)[];
+    receivedCount: number;
+    fromPeerId: string;
+  }
+  const pendingInjectedTracks = new Map<string, PendingInjectTrack>();
+
+  function generateCryptoSecret(): string {
+    const bytes = new Uint8Array(12);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function parseStationInput(raw: string): { station: string; injectToken: string } {
+    const cleaned = raw.replace(/^#/, '').trim();
+    const qIdx = cleaned.indexOf('?');
+    if (qIdx === -1) {
+      return { station: cleaned.toLowerCase(), injectToken: '' };
+    }
+    const station = cleaned.slice(0, qIdx).trim().toLowerCase();
+    const params = new URLSearchParams(cleaned.slice(qIdx + 1));
+    const injectToken = (params.get('inject') || '').trim();
+    return { station, injectToken };
+  }
   let compressStatus = $state<string>('');
   let compressTrackPct = $state<number>(0);
   let compressBatchPct = $state<number>(0);
@@ -533,12 +564,64 @@
       }
     };
 
+    mesh.onInjectAuthorized = (authorized) => {
+      listenerCanInject = authorized;
+      if (authorized) {
+        pushToast('success', 'CO-DJ INJECT CLEARANCE GRANTED');
+        statusLogs = [`[CO-DJ] Clearance verified for station ${stationCode}`, ...statusLogs.slice(0, 15)];
+      } else if (listenerInjectToken) {
+        pushToast('warning', 'CO-DJ INJECT KEY REJECTED');
+      }
+    };
+
+    mesh.onInjectTrackInit = (fromPeerId, manifest) => {
+      if (!manifest?.trackId || !manifest.totalChunks) return;
+      pendingInjectedTracks.set(manifest.trackId, {
+        manifest,
+        chunks: new Array(manifest.totalChunks).fill(null),
+        receivedCount: 0,
+        fromPeerId
+      });
+      statusLogs = [`[CO-DJ] Receiving "${manifest.title}" from ${fromPeerId} (${manifest.totalChunks} chunks)`, ...statusLogs.slice(0, 15)];
+    };
+
+    mesh.onInjectedChunkReceived = (trackId, chunkIndex, totalChunks, data) => {
+      const entry = pendingInjectedTracks.get(trackId);
+      if (!entry || chunkIndex < 0 || chunkIndex >= entry.chunks.length) return;
+      if (!entry.chunks[chunkIndex]) {
+        entry.chunks[chunkIndex] = new Uint8Array(data);
+        entry.receivedCount++;
+      }
+      if (entry.receivedCount === totalChunks) {
+        pendingInjectedTracks.delete(trackId);
+        const parts = entry.chunks.map((c) => new Blob([c ? new Uint8Array(c) : new Uint8Array(0)]));
+        const ext = entry.manifest.mimeType.includes('flac') ? 'flac' : 'mp3';
+        const assembled = new File(parts, `${entry.manifest.title || trackId}.${ext}`, { type: entry.manifest.mimeType });
+        djFiles.push(assembled);
+        trackFiles.set(trackId, assembled);
+        trackManifests.set(trackId, entry.manifest);
+        playlist.push(trackId);
+        mesh?.notifyInjectComplete(entry.fromPeerId, trackId);
+        const action = createDjAction('success', `CO-DJ INJECTED: ${entry.manifest.title}`);
+        syncPlaylistToListeners(action);
+        statusLogs = [`[CO-DJ] Added "${entry.manifest.title}" from ${entry.fromPeerId}`, ...statusLogs.slice(0, 15)];
+      }
+    };
+
+    mesh.onInjectTrackComplete = () => {
+      pushToast('success', 'TRACK UPLOADED TO DJ MANIFEST');
+    };
+
     // Check URL hash - populate stationCode and auto-tune if station is live
     const hash = window.location.hash.replace('#', '').trim();
     if (hash) {
-      stationCode = hash;
+      const parsed = parseStationInput(hash);
+      stationCode = parsed.station;
+      if (parsed.injectToken) {
+        listenerInjectToken = parsed.injectToken;
+      }
       try {
-        const res = await fetch(`/__p2p_relay/status?station=${encodeURIComponent(hash.toLowerCase())}`);
+        const res = await fetch(`/__p2p_relay/status?station=${encodeURIComponent(parsed.station)}`);
         if (res.ok) {
           const status = await res.json();
           if (status?.live && mode === 'select') {
@@ -578,69 +661,84 @@
 
   // --- DJ Actions ---
 
+  // Shared file transcode + metadata extractor for DJ & authorized Co-DJ listeners
+  async function processAudioFile(
+    origFile: File,
+    idx: number,
+    total: number
+  ): Promise<{ file: File; manifest: TrackManifest }> {
+    let file = origFile;
+    compressTrackIndex = idx + 1;
+    compressTrackTotal = total;
+    compressFileName = origFile.name;
+    compressTrackPct = 0;
+    compressBatchPct = Math.round((idx / total) * 100);
+    compressStatus = `Processing track ${idx + 1}/${total}: ${origFile.name}...`;
+
+    const origMeta = await parseAudioFile(origFile);
+
+    if (autoCompressMp3) {
+      try {
+        compressStatus = `Transcoding ${idx + 1}/${total} to 128k MP3... 0%`;
+        file = await compressAudioTo128kMp3(origFile, origFile.name, (pct) => {
+          compressTrackPct = pct;
+          compressBatchPct = Math.round(((idx + pct / 100) / total) * 100);
+          compressStatus = `Transcoding ${idx + 1}/${total} to 128k MP3... ${pct}%`;
+        });
+      } catch (err) {
+        console.warn(`[Audio Compressor] Failed to transcode ${origFile.name}, using original:`, err);
+      }
+    }
+
+    compressTrackPct = 100;
+    compressBatchPct = Math.round(((idx + 1) / total) * 100);
+
+    const encodedMeta = file === origFile ? origMeta : await parseAudioFile(file);
+    const meta = {
+      ...encodedMeta,
+      title: origMeta.title,
+      artist: origMeta.artist,
+      album: origMeta.album,
+      coverUrl: origMeta.coverUrl,
+      duration: encodedMeta.duration || origMeta.duration
+    };
+    const trackId = 't_' + Math.random().toString(36).substring(2, 9);
+    const manifest: TrackManifest = {
+      trackId,
+      title: meta.title,
+      artist: meta.artist,
+      album: meta.album,
+      duration: meta.duration,
+      mimeType: meta.mimeType,
+      totalSize: meta.sizeBytes,
+      totalChunks: Math.ceil(meta.sizeBytes / CHUNK_SIZE),
+      coverDataUrl: meta.coverUrl,
+    };
+
+    return { file, manifest };
+  }
+
+  function resetCompressProgress() {
+    compressStatus = '';
+    compressTrackPct = 0;
+    compressBatchPct = 0;
+    compressTrackIndex = 0;
+    compressTrackTotal = 0;
+    compressFileName = '';
+  }
+
   // Parse (and optionally transcode) files, registering them in the playlist. Returns new trackIds.
   async function ingestFiles(files: File[]): Promise<string[]> {
     const added: string[] = [];
-    compressTrackTotal = files.length;
 
     for (let idx = 0; idx < files.length; idx++) {
-      const origFile = files[idx];
-      let file = origFile;
-      compressTrackIndex = idx + 1;
-      compressFileName = origFile.name;
-      compressTrackPct = 0;
-      compressBatchPct = Math.round((idx / files.length) * 100);
-      compressStatus = `Processing track ${idx + 1}/${files.length}: ${origFile.name}...`;
-
-      // Parse metadata from original file before transcoding strips ID3/FLAC tags
-      const origMeta = await parseAudioFile(origFile);
-
-      // If auto-compress is enabled and file is not already a small mp3
-      if (autoCompressMp3) {
-        try {
-          compressStatus = `Transcoding ${idx + 1}/${files.length} to 128k MP3... 0%`;
-          file = await compressAudioTo128kMp3(origFile, origFile.name, (pct) => {
-            compressTrackPct = pct;
-            compressBatchPct = Math.round(((idx + pct / 100) / files.length) * 100);
-            compressStatus = `Transcoding ${idx + 1}/${files.length} to 128k MP3... ${pct}%`;
-          });
-        } catch (err) {
-          console.warn(`[DJ Compressor] Failed to transcode ${origFile.name}, using original:`, err);
-        }
-      }
-
-      compressTrackPct = 100;
-      compressBatchPct = Math.round(((idx + 1) / files.length) * 100);
-
-      const encodedMeta = file === origFile ? origMeta : await parseAudioFile(file);
-      const meta = {
-        ...encodedMeta,
-        title: origMeta.title,
-        artist: origMeta.artist,
-        album: origMeta.album,
-        coverUrl: origMeta.coverUrl,
-        duration: encodedMeta.duration || origMeta.duration
-      };
-      const trackId = 't_' + Math.random().toString(36).substring(2, 9);
-      const manifest: TrackManifest = {
-        trackId,
-        title: meta.title,
-        artist: meta.artist,
-        album: meta.album,
-        duration: meta.duration,
-        mimeType: meta.mimeType,
-        totalSize: meta.sizeBytes,
-        totalChunks: Math.ceil(meta.sizeBytes / CHUNK_SIZE),
-        coverDataUrl: meta.coverUrl,
-      };
-
+      const { file, manifest } = await processAudioFile(files[idx], idx, files.length);
       djFiles.push(file);
-      trackFiles.set(trackId, file);
-      trackManifests.set(trackId, manifest);
-      playlist.push(trackId);
-      added.push(trackId);
+      trackFiles.set(manifest.trackId, file);
+      trackManifests.set(manifest.trackId, manifest);
+      playlist.push(manifest.trackId);
+      added.push(manifest.trackId);
 
-      // Yield execution to the browser event loop so UI can repaint and remain responsive
       await new Promise((r) => setTimeout(r, 0));
     }
 
@@ -651,19 +749,12 @@
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
     uploadProcessing = true;
-    compressStatus = '';
-    compressTrackPct = 0;
-    compressBatchPct = 0;
+    resetCompressProgress();
 
     try {
       await ingestFiles(Array.from(input.files));
     } finally {
-      compressStatus = '';
-      compressTrackPct = 0;
-      compressBatchPct = 0;
-      compressTrackIndex = 0;
-      compressTrackTotal = 0;
-      compressFileName = '';
+      resetCompressProgress();
       uploadProcessing = false;
     }
   }
@@ -673,11 +764,9 @@
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0 || !mesh) return;
     const files = Array.from(input.files);
-    input.value = ''; // allow re-selecting the same files later
+    input.value = '';
     addingTracks = true;
-    compressStatus = '';
-    compressTrackPct = 0;
-    compressBatchPct = 0;
+    resetCompressProgress();
 
     try {
       const added = await ingestFiles(files);
@@ -690,13 +779,100 @@
         syncPlaylistToListeners(action);
       }
     } finally {
-      compressStatus = '';
-      compressTrackPct = 0;
-      compressBatchPct = 0;
-      compressTrackIndex = 0;
-      compressTrackTotal = 0;
-      compressFileName = '';
+      resetCompressProgress();
       addingTracks = false;
+    }
+  }
+
+  // Co-DJ Listener: encode/parse tracks and stream chunks to the DJ origin
+  async function handleInjectTracksAsListener(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0 || !mesh || !listenerCanInject) return;
+    const files = Array.from(input.files);
+    input.value = '';
+    addingTracks = true;
+    resetCompressProgress();
+
+    try {
+      for (let idx = 0; idx < files.length; idx++) {
+        const { file, manifest } = await processAudioFile(files[idx], idx, files.length);
+        mesh.sendInjectTrackInit(manifest);
+        const totalChunks = manifest.totalChunks;
+        for (let c = 0; c < totalChunks; c++) {
+          const slice = file.slice(c * CHUNK_SIZE, Math.min((c + 1) * CHUNK_SIZE, file.size));
+          const buf = await slice.arrayBuffer();
+          mesh.sendInjectChunkToDJ(manifest.trackId, c, totalChunks, buf);
+          if (c % 4 === 0) {
+            await yieldUnthrottled();
+          }
+        }
+        statusLogs = [`[CO-DJ] Uploaded "${manifest.title}" to DJ origin`, ...statusLogs.slice(0, 15)];
+      }
+    } finally {
+      resetCompressProgress();
+      addingTracks = false;
+    }
+  }
+
+  function confirmRemoveTrack(trackId: string, index: number) {
+    const item = trackManifests.get(trackId);
+    const title = item?.title || 'Unknown Track';
+    const isActive = index === djActiveTrackIndex;
+    systemDialog = {
+      open: true,
+      variant: 'critical',
+      title: 'PURGE TRACK FROM MANIFEST',
+      message: `Remove "${title}" from the transmission manifest?${
+        isActive ? ' This track is currently ON AIR — playback will advance or halt.' : ''
+      }`,
+      confirmLabel: 'PURGE TRACK',
+      cancelLabel: 'ABORT',
+      onConfirm: () => {
+        systemDialog.open = false;
+        removeTrackAtIndex(trackId, index);
+      },
+      onCancel: () => {
+        systemDialog.open = false;
+      }
+    };
+  }
+
+  function removeTrackAtIndex(trackId: string, index: number) {
+    if (index < 0 || index >= playlist.length || playlist[index] !== trackId) return;
+    const removedTitle = trackManifests.get(trackId)?.title || trackId;
+    playlist.splice(index, 1);
+    trackFiles.delete(trackId);
+    trackManifests.delete(trackId);
+    djFiles = djFiles.filter((_, i) => i !== index);
+
+    if (playlist.length === 0) {
+      djActiveTrackIndex = 0;
+      isPlaying = false;
+      player?.pause();
+      currentTrack = null;
+      nextTrack = null;
+      if (mesh) {
+        mesh.updateStationState({
+          currentTrackId: null,
+          nextTrackId: null,
+          isPlaying: false,
+          playlistOrder: [],
+          trackManifests: {},
+          lastAction: createDjAction('warning', `DJ PURGED: ${removedTitle}`)
+        });
+      }
+      return;
+    }
+
+    if (index < djActiveTrackIndex) {
+      djActiveTrackIndex--;
+      syncPlaylistToListeners(createDjAction('warning', `DJ PURGED: ${removedTitle}`));
+    } else if (index === djActiveTrackIndex) {
+      const nextIdx = Math.min(index, playlist.length - 1);
+      playTrackAtIndex(nextIdx);
+      pushToast('warning', `PURGED: ${removedTitle}`);
+    } else {
+      syncPlaylistToListeners(createDjAction('warning', `DJ PURGED: ${removedTitle}`));
     }
   }
 
@@ -771,7 +947,8 @@
       for (const [id, m] of trackManifests.entries()) {
         manifestObj[id] = m;
       }
-      mesh.hostStation(stationCode, manifestObj, playlist, isPublicStation);
+      injectSecret = generateCryptoSecret();
+      mesh.hostStation(stationCode, manifestObj, playlist, isPublicStation, injectSecret);
       myPeerId = mesh.peerId;
     } catch (e) {
       console.error("Error hosting station:", e);
@@ -1037,12 +1214,22 @@
 
   function joinAsListener() {
     if (!mesh || !stationCode) return;
+    const parsed = parseStationInput(stationCode);
+    if (!parsed.station) return;
+    stationCode = parsed.station;
+    if (parsed.injectToken) {
+      listenerInjectToken = parsed.injectToken;
+    }
+    listenerCanInject = false;
     hasInitialListenerSync = false;
     lastSeenActionId = '';
-    history.replaceState(null, '', '#' + stationCode);
+    const nextHash = listenerInjectToken
+      ? `#${stationCode}?inject=${encodeURIComponent(listenerInjectToken)}`
+      : `#${stationCode}`;
+    history.replaceState(null, '', nextHash);
     mode = 'listener';
     triggerEmergencyBanner('SYNCING TO DJ', 'ESTABLISHING P2P CARRIER LOCK', stationCode, 5000);
-    mesh.joinStation(stationCode);
+    mesh.joinStation(stationCode, listenerInjectToken);
     myPeerId = mesh.peerId;
   }
 
@@ -1579,7 +1766,10 @@
               <button
                 type="button"
                 class="share-code-btn"
-                onclick={() => navigator.clipboard.writeText(window.location.href)}
+                onclick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/#${stationCode}`);
+                  pushToast('info', 'STATION UPLINK COPIED');
+                }}
                 title="Click to copy station link"
               >
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -1588,6 +1778,23 @@
                 </svg>
                 <span>{window.location.host}/#{stationCode}</span>
               </button>
+              {#if mode === 'dj' && injectSecret}
+                <button
+                  type="button"
+                  class="share-code-btn codj-key-btn"
+                  onclick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/#${stationCode}?inject=${injectSecret}`);
+                    pushToast('success', 'CO-DJ INJECT UPLINK COPIED');
+                  }}
+                  title="Copy secret Co-DJ invite link (grants track injection clearance)"
+                >
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="7.5" cy="15.5" r="4.5" />
+                    <path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" />
+                  </svg>
+                  <span>CO-DJ KEY</span>
+                </button>
+              {/if}
               <button
                 type="button"
                 class="analysis-toggle-btn"
@@ -1871,11 +2078,43 @@
                       >
                         ▼
                       </button>
+                      <button
+                        type="button"
+                        class="q-remove-btn"
+                        onclick={(e) => { e.stopPropagation(); confirmRemoveTrack(tId, index); }}
+                        title="Purge track from manifest"
+                        aria-label="Purge track from manifest"
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
                 </div>
               {/each}
             </div>
+          </div>
+        {:else if mode === 'listener' && listenerCanInject}
+          <div class="queue-card codj-card">
+            <div class="nerv-hazard-banner"></div>
+            <div class="queue-header">
+              <div class="queue-title-group">
+                <span class="tech-code">CO-DJ // CLEARANCE GRANTED</span>
+                <h3>REMOTE TRACK INJECTION</h3>
+              </div>
+              <label class="icon-btn add-songs-btn">
+                <span class="cmd-led" aria-hidden="true"></span>
+                <span class="cmd-prefix">CMD //</span>
+                <span class="btn-glyph">{addingTracks ? '•••' : '+'}</span>
+                <span>{addingTracks ? 'UPLOADING…' : 'INJECT TRACKS'}</span>
+                <input type="file" multiple accept=".mp3,.flac,audio/*" style="display:none" disabled={addingTracks} onchange={handleInjectTracksAsListener} />
+              </label>
+            </div>
+            {#if addingTracks}
+              <div class="queue-transcode-box">
+                <span class="dropzone-tag">CO-DJ UPLINK // 解析中</span>
+                {@render transcodePhaseRails()}
+              </div>
+            {/if}
           </div>
         {/if}
       {/if}
@@ -4376,6 +4615,42 @@
   .q-nudge-btn:disabled {
     opacity: 0.22;
     cursor: not-allowed;
+  }
+
+  .q-remove-btn {
+    background: transparent;
+    border: none;
+    border-left: 1px solid rgba(255, 42, 77, 0.35);
+    color: #ff4d6d;
+    font-size: 0.68rem;
+    padding: 4px 7px;
+    min-height: 22px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+
+  .q-remove-btn:hover {
+    background: rgba(255, 42, 77, 0.28);
+    color: #ffffff;
+  }
+
+  .codj-key-btn {
+    border-color: rgba(255, 119, 0, 0.55);
+    color: #ff9900;
+  }
+
+  .codj-key-btn:hover {
+    border-color: #39ff6a;
+    color: #39ff6a;
+  }
+
+  .codj-card {
+    border-color: rgba(57, 255, 106, 0.55);
   }
 
   /* Sidebar & Logs */
