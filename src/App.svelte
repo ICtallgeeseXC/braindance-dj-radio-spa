@@ -28,11 +28,6 @@
   let autoCompressMp3 = $state<boolean>(false);
   let compressStatus = $state<string>('');
 
-  // ICE / TURN NAT Traversal Modal State
-  let showIceModal = $state<boolean>(false);
-  let iceConfigJson = $state<string>('');
-  let iceSaveStatus = $state<string>('');
-
   // Mesh & Player Instances
   let mesh: P2PMesh | null = null;
   let player: PlayerController | null = null;
@@ -725,55 +720,6 @@
     }
   }
 
-  function openIceModal() {
-    const saved = P2PMesh.getSavedIceServers();
-    if (saved && saved.length > 0) {
-      iceConfigJson = JSON.stringify(saved, null, 2);
-    } else {
-      iceConfigJson = JSON.stringify([
-        {
-          urls: [
-            "turn:relay.metered.ca:80",
-            "turn:relay.metered.ca:443",
-            "turn:relay.metered.ca:443?transport=tcp"
-          ],
-          username: "YOUR_TURN_USERNAME",
-          credential: "YOUR_TURN_PASSWORD"
-        }
-      ], null, 2);
-    }
-    iceSaveStatus = '';
-    showIceModal = true;
-  }
-
-  function saveIceConfig() {
-    try {
-      if (!iceConfigJson.trim()) {
-        P2PMesh.saveIceServers(null);
-        iceSaveStatus = 'Cleared. Default public STUN servers restored.';
-        setTimeout(() => { showIceModal = false; window.location.reload(); }, 900);
-        return;
-      }
-      const parsed = JSON.parse(iceConfigJson);
-      if (!Array.isArray(parsed)) {
-        iceSaveStatus = 'Error: Must be a JSON array of RTCIceServer objects [ { urls: ... } ]';
-        return;
-      }
-      P2PMesh.saveIceServers(parsed);
-      iceSaveStatus = 'Saved! Reloading page to apply new ICE / TURN routes...';
-      setTimeout(() => { showIceModal = false; window.location.reload(); }, 900);
-    } catch (e: any) {
-      iceSaveStatus = `JSON Parse Error: ${e.message}`;
-    }
-  }
-
-  function resetIceConfig() {
-    P2PMesh.saveIceServers(null);
-    iceConfigJson = '';
-    iceSaveStatus = 'Reset to default STUN. Reloading...';
-    setTimeout(() => { showIceModal = false; window.location.reload(); }, 900);
-  }
-
   function formatTime(secs: number): string {
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
@@ -808,9 +754,6 @@
           ⬇ INSTALL HUD
         </button>
       {/if}
-      <button type="button" class="network-btn" onclick={openIceModal} title="Configure STUN / TURN NAT Traversal">
-        ⚙ ICE / NAT
-      </button>
       {#if mode !== 'select'}
         <button type="button" class="exit-btn" onclick={() => { window.location.hash = ''; window.location.reload(); }}>
           ✕ ABORT LINK
@@ -1231,62 +1174,6 @@
       </div>
     </aside>
   </div>
-
-  {#if showIceModal}
-    <div
-      class="modal-overlay"
-      onclick={() => (showIceModal = false)}
-      onkeydown={(e) => e.key === 'Escape' && (showIceModal = false)}
-      role="presentation"
-    >
-      <div
-        class="modal-card"
-        onclick={(e) => e.stopPropagation()}
-        onkeydown={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-      >
-        <div class="nerv-top-hazard" aria-hidden="true"></div>
-        <div class="modal-header">
-          <span class="modal-title">MAGI_NET // NAT TRAVERSAL &amp; ICE CONFIG</span>
-          <button type="button" class="modal-close-btn" onclick={() => (showIceModal = false)}>✕</button>
-        </div>
-
-        <div class="modal-body">
-          <p class="modal-desc">
-            <strong>⚡ UNIVERSAL ZERO-CONFIG BRIDGE ACTIVE:</strong> This station automatically bridges peers behind mobile 4G/5G, CGNAT, or strict firewalls over the built-in WebSocket Tunnel Relay (<code>/__p2p_relay</code>) whenever direct WebRTC P2P is blocked—<strong>zero router port forwarding or TURN setup needed</strong>.
-          </p>
-          <p class="modal-desc">
-            <em>Optional:</em> Supply custom external <code>RTCIceServer</code> (STUN/TURN) endpoints for direct UDP traversal below:
-          </p>
-
-          <textarea
-            class="ice-textarea"
-            bind:value={iceConfigJson}
-            placeholder="JSON array of RTCIceServer objects..."
-            rows="8"
-            spellcheck="false"
-          ></textarea>
-
-          {#if iceSaveStatus}
-            <div class="ice-status" class:error={iceSaveStatus.startsWith('Error') || iceSaveStatus.startsWith('JSON')}>
-              {iceSaveStatus}
-            </div>
-          {/if}
-
-          <div class="modal-actions">
-            <button type="button" class="cyber-btn secondary" onclick={resetIceConfig}>
-              Reset Default STUN
-            </button>
-            <button type="button" class="cyber-btn primary" onclick={saveIceConfig}>
-              Save &amp; Apply ICE Config
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  {/if}
 </main>
 
 <style>
@@ -1457,26 +1344,6 @@
       color: var(--neon-green);
       box-shadow: 0 0 14px rgba(0, 255, 102, 0.4);
     }
-  }
-
-  .network-btn {
-    background: rgba(255, 123, 0, 0.12);
-    color: var(--nerv-amber);
-    border: 1px solid rgba(255, 123, 0, 0.5);
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    padding: 7px 12px;
-    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-  }
-
-  .network-btn:hover {
-    background: rgba(255, 123, 0, 0.28);
-    color: #fff;
-    border-color: var(--neon-yellow);
   }
 
   .exit-btn {
@@ -3006,131 +2873,4 @@
     color: var(--text-dim);
   }
 
-  /* Modal Dialog */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(2, 4, 10, 0.88);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 16px;
-    overscroll-behavior: contain;
-  }
-
-  .modal-card {
-    background: #060a14;
-    border: 1px solid var(--nerv-amber);
-    width: 100%;
-    max-width: 620px;
-    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    outline: none;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid rgba(255, 123, 0, 0.35);
-    padding-bottom: 10px;
-  }
-
-  .modal-title {
-    font-family: var(--font-display);
-    font-size: 0.92rem;
-    font-weight: 800;
-    color: var(--nerv-amber);
-    letter-spacing: 0.08em;
-  }
-
-  .modal-close-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 0, 60, 0.4);
-    color: var(--neon-magenta);
-    font-size: 1rem;
-    cursor: pointer;
-    padding: 4px 10px;
-    min-height: 32px;
-  }
-
-  .modal-desc {
-    font-size: 0.88rem;
-    color: var(--text-muted);
-    line-height: 1.45;
-    margin: 0 0 10px 0;
-  }
-
-  .modal-desc strong {
-    color: var(--neon-green);
-  }
-
-  .modal-desc code {
-    color: var(--neon-cyan);
-    background: rgba(0, 240, 255, 0.1);
-    padding: 2px 5px;
-    font-family: var(--font-mono);
-  }
-
-  .ice-textarea {
-    width: 100%;
-    box-sizing: border-box;
-    background: #020409;
-    border: 1px solid rgba(255, 123, 0, 0.4);
-    color: var(--neon-green);
-    font-family: var(--font-mono);
-    font-size: 0.82rem;
-    padding: 10px;
-    outline: none;
-    resize: vertical;
-  }
-
-  .ice-textarea:focus {
-    border-color: var(--neon-cyan);
-  }
-
-  .ice-status {
-    font-family: var(--font-mono);
-    font-size: 0.82rem;
-    color: var(--neon-green);
-    padding: 4px 0;
-  }
-
-  .ice-status.error {
-    color: var(--neon-magenta);
-  }
-
-  .modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 8px;
-  }
-
-  .cyber-btn {
-    font-family: var(--font-display);
-    font-size: 0.8rem;
-    font-weight: 700;
-    padding: 10px 18px;
-    cursor: pointer;
-    letter-spacing: 0.08em;
-    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
-  }
-
-  .cyber-btn.primary {
-    background: linear-gradient(135deg, var(--nerv-amber), #ff4500);
-    color: #04060c;
-    border: none;
-  }
-
-  .cyber-btn.secondary {
-    background: rgba(255, 0, 60, 0.15);
-    color: var(--neon-magenta);
-    border: 1px solid rgba(255, 0, 60, 0.45);
-  }
 </style>
