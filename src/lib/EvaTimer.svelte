@@ -928,7 +928,6 @@
   }
 
   .scan-beam {
-    filter: drop-shadow(0 0 6px rgba(255, 119, 0, 0.85));
     pointer-events: none;
   }
 
