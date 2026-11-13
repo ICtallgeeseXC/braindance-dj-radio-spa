@@ -563,7 +563,13 @@
       onclick={cycleVisMode}
       title="Cycle Visualizer Mode: LO (30fps) / HI (60fps) / OFF"
     >
-      VIS: {visMode.toUpperCase()}
+      <span class="vis-led" aria-hidden="true"></span>
+      <span class="vis-prefix">VIS //</span>
+      <span class="vis-state">{visMode.toUpperCase()}</span>
+      <span class="vis-bars" aria-hidden="true">
+        <span class="vis-bar" class:lit={visMode !== 'off'}></span>
+        <span class="vis-bar" class:lit={visMode === 'hi'}></span>
+      </span>
     </button>
   </div>
   <svg class="audiovisual-svg" viewBox="0 0 880 320" preserveAspectRatio="xMidYMid meet">
@@ -947,44 +953,102 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding: 0 2px 4px 2px;
+    padding: 0 2px 6px 2px;
   }
 
   .vis-mode-pill {
     position: relative;
     z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     font-family: 'Share Tech Mono', monospace;
     font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 3px 10px;
-    border-radius: 2px;
+    letter-spacing: 0.1em;
+    padding: 4px 12px 4px 10px;
+    background: rgba(3, 7, 16, 0.95);
+    border: 1px solid rgba(0, 240, 255, 0.55);
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.85);
     cursor: pointer !important;
     user-select: none;
     -webkit-user-select: none;
-    background: rgba(0, 212, 255, 0.14);
-    color: #00d4ff;
-    border: 1px solid #00d4ff;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .vis-led {
+    width: 6px;
+    height: 12px;
+    background: #00f0ff;
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.75);
+  }
+  .vis-prefix {
+    color: rgba(255, 119, 0, 0.65);
+    font-size: 0.65rem;
+    font-weight: 700;
+  }
+  .vis-state {
+    color: #00f0ff;
+    font-family: 'Orbitron', 'Share Tech Mono', monospace;
+    font-weight: 800;
+    font-size: 0.74rem;
+    letter-spacing: 0.12em;
+  }
+  .vis-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    margin-left: 2px;
+  }
+  .vis-bar {
+    width: 4px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+  .vis-bar:nth-child(2) {
+    height: 10px;
+  }
+  .vis-mode-pill.is-lo .vis-bar.lit {
+    background: #00f0ff;
+    border-color: #00f0ff;
   }
   .vis-mode-pill:hover {
-    background: rgba(0, 212, 255, 0.25);
+    background: rgba(0, 240, 255, 0.12);
+    border-color: #00f0ff;
   }
+
   .vis-mode-pill.is-hi {
-    background: rgba(255, 42, 77, 0.16);
+    border-color: rgba(255, 42, 77, 0.75);
+  }
+  .vis-mode-pill.is-hi .vis-led {
+    background: #ff2a4d;
+    box-shadow: 0 0 6px rgba(255, 42, 77, 0.85);
+  }
+  .vis-mode-pill.is-hi .vis-state {
     color: #ff2a4d;
+  }
+  .vis-mode-pill.is-hi .vis-bar.lit {
+    background: #ff2a4d;
     border-color: #ff2a4d;
   }
   .vis-mode-pill.is-hi:hover {
-    background: rgba(255, 42, 77, 0.28);
+    background: rgba(255, 42, 77, 0.14);
+    border-color: #ff2a4d;
   }
+
   .vis-mode-pill.is-off {
-    background: rgba(120, 40, 20, 0.18);
-    color: rgba(255, 119, 0, 0.65);
-    border-color: rgba(255, 119, 0, 0.4);
+    border-color: rgba(255, 119, 0, 0.35);
+  }
+  .vis-mode-pill.is-off .vis-led {
+    background: rgba(255, 119, 0, 0.35);
+    box-shadow: none;
+  }
+  .vis-mode-pill.is-off .vis-state {
+    color: rgba(255, 119, 0, 0.6);
   }
   .vis-mode-pill.is-off:hover {
-    background: rgba(120, 40, 20, 0.32);
+    background: rgba(255, 119, 0, 0.1);
+    border-color: rgba(255, 119, 0, 0.6);
   }
 
   /* Header Typography matching reference image */
