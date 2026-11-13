@@ -323,8 +323,9 @@
   const PSYCHO_THRESHOLD = 0.26;
   const psychoPaths: (SVGPathElement | null)[] = Array(10).fill(null);
   const psychoLeftPaths: (SVGPathElement | null)[] = Array(10).fill(null);
-  let psychoEyeGroup: SVGGElement | null = $state(null);
+  let psychoWarnGroup: SVGGElement | null = $state(null);
   const psychoSmoothedEnergy = new Float32Array(10);
+  let psychoClipGlow = 0;
 
   function buildPsychoLeftPath(idx: number): string {
     const baseY = PSYCHO_BANDS[idx].baseY;
@@ -393,13 +394,30 @@
       }
     }
 
-    if (psychoEyeGroup) {
+    if (psychoWarnGroup) {
+      let peakAmp = 0;
+      if (timeData && timeData.length > 0) {
+        for (let k = 0; k < timeData.length; k += 4) {
+          const amp = Math.abs(timeData[k] - 128) / 128;
+          if (amp > peakAmp) peakAmp = amp;
+        }
+      }
       const avgEnergy = totalEnergy / PSYCHO_BANDS.length;
-      const eyeChaos = Math.max(0, Math.min(1, (avgEnergy - 0.28) / 0.32));
-      psychoEyeGroup.setAttribute('opacity', (eyeChaos * 0.92).toFixed(2));
-      const jx = eyeChaos * Math.sin(nowSec * 19) * 3.5;
-      const jy = eyeChaos * Math.cos(nowSec * 23) * 2.5;
-      psychoEyeGroup.setAttribute('transform', `translate(${jx.toFixed(1)}, ${jy.toFixed(1)})`);
+      const targetClip = Math.max(
+        0,
+        Math.min(1, Math.max((peakAmp - 0.68) / 0.27, (avgEnergy - 0.38) / 0.28))
+      );
+      psychoClipGlow =
+        targetClip > psychoClipGlow
+          ? psychoClipGlow * 0.25 + targetClip * 0.75
+          : psychoClipGlow * 0.88 + targetClip * 0.12;
+
+      if (psychoClipGlow > 0.04) {
+        const pulse = psychoClipGlow > 0.55 ? 0.78 + 0.22 * Math.sin(nowSec * 16) : 1;
+        psychoWarnGroup.setAttribute('opacity', Math.min(0.95, psychoClipGlow * pulse).toFixed(2));
+      } else {
+        psychoWarnGroup.setAttribute('opacity', '0');
+      }
     }
   }
 
@@ -916,6 +934,23 @@
     <!-- 7 VERTICAL OSCILLOSCOPE CHANNELS, 666 PSYCHOGRAPHIC DISPLAY, OR SEELE 02 SOUND ONLY MONOLITH -->
     {#if visMode === '666'}
       <g class="psycho-display-group" filter="url(#psycho-glow)">
+        <!-- Background Near-Overclipping Warning Overlay (behind psychographic strands) -->
+        <g bind:this={psychoWarnGroup} class="psycho-warn-bg" opacity="0">
+          <!-- Top double-bordered APPROACHING LIMIT stamp -->
+          <rect x="498" y="56" width="352" height="44" rx="7" fill="rgba(255, 16, 48, 0.08)" stroke="#ff1e42" stroke-width="2" />
+          <rect x="503" y="61" width="342" height="34" rx="4" fill="none" stroke="#ff1e42" stroke-width="1.3" />
+          <text x="674" y="87" text-anchor="middle" textLength="322" lengthAdjust="spacingAndGlyphs" class="psycho-warn-title">
+            APPROACHING LIMIT
+          </text>
+
+          <!-- Bottom double-bordered DANGER stamp -->
+          <rect x="498" y="108" width="232" height="46" rx="7" fill="rgba(255, 16, 48, 0.08)" stroke="#ff1e42" stroke-width="2" />
+          <rect x="503" y="113" width="222" height="36" rx="4" fill="none" stroke="#ff1e42" stroke-width="1.3" />
+          <text x="614" y="142" text-anchor="middle" textLength="200" lengthAdjust="spacingAndGlyphs" class="psycho-warn-danger">
+            DANGER
+          </text>
+        </g>
+
         <!-- Left Converging Neural Links (LINK A¹ .. A¹⁰) & Live Right-Side Audiograph Strands -->
         {#each PSYCHO_BANDS as band, i}
           <text x="64" y={band.baseY - 5} class="psycho-link-label">
@@ -940,38 +975,6 @@
             opacity="0.85"
           />
         {/each}
-
-        <!-- Psychographic Contamination Eye Motifs (emerge above threshold) -->
-        <g bind:this={psychoEyeGroup} opacity="0">
-          <!-- Primary Mid-Right Eye Scrawl -->
-          <path
-            d="M578,136 Q616,104 656,134 Q616,162 578,136 Z M598,134 A17,17 0 1,0 634,134 A17,17 0 1,0 598,134 M610,134 A6,6 0 1,0 622,134 A6,6 0 1,0 610,134"
-            fill="none"
-            stroke="#fff6aa"
-            stroke-width="1.6"
-          />
-          <path
-            d="M574,130 L584,119 L594,125 L605,112 L617,120 L629,110 L640,122 L652,115 L660,129"
-            fill="none"
-            stroke="#fff6aa"
-            stroke-width="1.2"
-            opacity="0.85"
-          />
-          <!-- Upper-Right Secondary Eye Scrawl -->
-          <path
-            d="M694,88 Q726,64 760,86 Q726,106 694,88 Z M713,86 A13,13 0 1,0 741,86 A13,13 0 1,0 713,86 M723,86 A4.5,4.5 0 1,0 732,86 A4.5,4.5 0 1,0 723,86"
-            fill="none"
-            stroke="#fff6aa"
-            stroke-width="1.45"
-          />
-          <path
-            d="M690,83 L702,71 L713,77 L725,65 L737,74 L749,67 L762,81"
-            fill="none"
-            stroke="#fff6aa"
-            stroke-width="1.1"
-            opacity="0.82"
-          />
-        </g>
 
         <!-- Bottom Calibrated Psychographic Ruler (-50 .. ±0 .. +50) -->
         <line x1="12" y1="292" x2="868" y2="292" stroke="#ff7700" stroke-width="1.5" />
@@ -1364,6 +1367,23 @@
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
+  }
+  .psycho-warn-bg {
+    pointer-events: none;
+  }
+  .psycho-warn-title {
+    fill: #ff1e42;
+    font-family: 'Orbitron', 'Share Tech Mono', monospace;
+    font-size: 23px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+  }
+  .psycho-warn-danger {
+    fill: #ff1e42;
+    font-family: 'Orbitron', 'Share Tech Mono', monospace;
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
   }
 
   .vis-mode-pill.is-off {
