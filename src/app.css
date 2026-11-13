@@ -1,0 +1,152 @@
+/* Local Self-Hosted Fonts for 100% Offline PWA */
+@font-face {
+  font-family: 'Orbitron';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/orbitron-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/rajdhani-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/rajdhani-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/rajdhani-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Share Tech Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/share-tech-mono-400.woff2') format('woff2');
+}
+
+:root {
+  --bg-dark: #04050a;
+  --bg-surface: #080b13;
+  --bg-card: rgba(9, 13, 24, 0.94);
+  --bg-card-inner: rgba(4, 7, 15, 0.9);
+
+  /* NERV / Evangelion & Cyberpunk Palette */
+  --nerv-amber: #ff7b00;
+  --nerv-orange: #ff5500;
+  --neon-yellow: #ffd000;
+  --neon-magenta: #ff003c;
+  --neon-cyan: #00f0ff;
+  --neon-green: #00ff66;
+  --neon-purple: #9d4edd;
+
+  /* Text & Accents */
+  --text-primary: #f2f7ff;
+  --text-muted: #8ca0be;
+  --text-dim: #526582;
+  --text-cyber: #00f0ff;
+
+  /* Borders & Glows */
+  --cyber-border: rgba(0, 240, 255, 0.32);
+  --nerv-border-amber: rgba(255, 123, 0, 0.45);
+  --cyber-border-magenta: rgba(255, 0, 60, 0.45);
+
+  /* Hazard Stripes */
+  --hazard-amber: repeating-linear-gradient(
+    -45deg,
+    #ff7b00 0px,
+    #ff7b00 8px,
+    #060810 8px,
+    #060810 16px
+  );
+  --hazard-crimson: repeating-linear-gradient(
+    -45deg,
+    #ff003c 0px,
+    #ff003c 8px,
+    #060810 8px,
+    #060810 16px
+  );
+
+  /* Typography */
+  --font-display: 'Orbitron', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Share Tech Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-body: 'Rajdhani', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(255, 123, 0, 0.08) 0%, transparent 45%),
+    radial-gradient(circle at 85% 0%, rgba(0, 240, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 50% 100%, rgba(255, 0, 60, 0.06) 0%, transparent 50%),
+    linear-gradient(rgba(0, 240, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+  background-attachment: scroll;
+}
+
+/* Lightweight CRT Scanline Overlay (zero layout/paint cost) */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.22) 2px,
+    rgba(0, 0, 0, 0.22) 4px
+  );
+  z-index: 999999;
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+/* Custom NERV Tactical Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #05070e;
+  border-left: 1px solid rgba(255, 123, 0, 0.15);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--nerv-amber);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-cyan);
+}
