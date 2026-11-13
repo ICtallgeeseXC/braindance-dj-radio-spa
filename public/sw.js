@@ -2,8 +2,8 @@
 // PYRAMID // RADIO Service Worker
 // Provides 100% offline functionality, full asset caching, and standalone PWA installation.
 
-const CACHE_NAME = 'pyramid-radio-v1';
-const RUNTIME_CACHE = 'pyramid-radio-runtime-v1';
+const CACHE_NAME = 'pyramid-radio-v2';
+const RUNTIME_CACHE = 'pyramid-radio-runtime-v2';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -96,6 +96,12 @@ self.addEventListener('fetch', (event) => {
         .then((networkResponse) => {
           // Only cache valid basic or cors responses
           if (!networkResponse || (networkResponse.status !== 200 && networkResponse.type !== 'opaque')) {
+            return networkResponse;
+          }
+
+          // Never cache HTML SPA fallbacks as /assets/ JS or CSS
+          const contentType = networkResponse.headers.get('content-type') || '';
+          if (url.pathname.startsWith('/assets/') && contentType.includes('text/html')) {
             return networkResponse;
           }
 
