@@ -1,8 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "p2p-radio",
+  "name": "braindance",
   "main": "worker/relay-worker.ts",
   "compatibility_date": "2025-11-01",
+  "workers_dev": true,
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

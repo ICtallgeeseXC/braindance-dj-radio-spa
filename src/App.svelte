@@ -1647,6 +1647,7 @@
           <div class="logo-pulse"></div>
           <span class="logo-text">BRAINDANCE // RADIO</span>
           <span class="badge">MAGI MESH</span>
+          <span class="badge version-badge" title="Build v{__APP_VERSION__} ({__APP_COMMIT__})">v{__APP_VERSION__}+{__APP_COMMIT__}</span>
         </div>
         <span class="logo-sub">特務機関 音響中継網 // CENTRAL DOGMA SYNCHRONIZED BROADCAST</span>
       </div>
@@ -2670,6 +2671,13 @@
     font-weight: bold;
     border: 1px solid rgba(0, 240, 255, 0.45);
     letter-spacing: 0.1em;
+  }
+
+  .version-badge {
+    background: rgba(255, 153, 0, 0.12);
+    color: var(--nerv-amber);
+    border-color: rgba(255, 153, 0, 0.45);
+    letter-spacing: 0.06em;
   }
 
   .header-right {
