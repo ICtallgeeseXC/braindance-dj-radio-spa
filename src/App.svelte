@@ -292,10 +292,39 @@
     return d;
   }
 
+  function buildBlendedOscWavePath(
+    ampA: number,
+    cyclesA: number,
+    phaseA: number,
+    ampB: number,
+    cyclesB: number,
+    phaseB: number,
+    blend: number
+  ): string {
+    let d = '';
+    for (let x = 0; x <= 260; x += 6) {
+      const nx = (x / 260) * Math.PI * 2;
+      const yA = 38 + ampA * Math.sin(nx * cyclesA + phaseA);
+      const yB = 38 + ampB * Math.sin(nx * cyclesB + phaseB);
+      const y = yA + (yB - yA) * blend;
+      d += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(1)}`;
+    }
+    return d;
+  }
+
   let oscPrimaryPath = $state<string>(buildOscWavePath(21, 2, 0));
   let oscSecondaryPath = $state<string>(buildOscWavePath(-20, 2, 0));
   let oscCarrierPath = $state<string>(buildOscWavePath(11, 1, 0));
   let oscPhaseLabel = $state<string>('+0.00');
+  let oscSyncProgress = $state<number>(0);
+
+  const oscSyncState = $derived<'idle' | 'syncing' | 'locked'>(
+    oscSyncProgress >= 0.99
+      ? 'locked'
+      : uploadProcessing || djFiles.length > 0 || oscSyncProgress > 0.01
+        ? 'syncing'
+        : 'idle'
+  );
 
   $effect(() => {
     if (mode !== 'select') return;
@@ -305,21 +334,44 @@
 
     let rafId = 0;
     let lastFrame = 0;
-    const startMs = performance.now();
+    let prevNow = performance.now();
+    const startMs = prevNow;
+    let linearProgress = 0;
 
     const step = (now: number) => {
       if (now - lastFrame >= 22) {
+        const dt = Math.min(0.05, Math.max(0.001, (now - prevNow) * 0.001));
+        prevNow = now;
         lastFrame = now;
+
+        const targetActive = uploadProcessing || djFiles.length > 0;
+        if (targetActive) {
+          linearProgress = Math.min(1, linearProgress + dt / 4.0);
+        } else {
+          linearProgress = Math.max(0, linearProgress - dt / 2.2);
+        }
+        const blend = linearProgress * linearProgress * (3 - 2 * linearProgress);
+        oscSyncProgress = blend;
+
         const t = (now - startMs) * 0.001;
-        const drift = 0.42 * Math.sin(t * 0.75);
-        const ampPrimary = 19.5 + 2.5 * Math.sin(t * 1.3);
-        const ampSecondary = -(18.5 + 2.5 * Math.cos(t * 1.1));
+        const rawDrift = 0.42 * Math.sin(t * 0.75);
+        const phaseError = rawDrift * (1 - blend);
+
+        const ampPrimary = 19.5 + (2.5 * (1 - blend * 0.65)) * Math.sin(t * 1.3);
+        const ampSecIdle = 18.5 + 2.5 * Math.cos(t * 1.1);
+        const ampSecondary = ampSecIdle + (ampPrimary - ampSecIdle) * blend;
         const ampCarrier = 10.5 + 2.0 * Math.sin(t * 0.9 + 1.0);
 
-        oscPrimaryPath = buildOscWavePath(ampPrimary, 2, -t * 2.6);
-        oscSecondaryPath = buildOscWavePath(ampSecondary, 2, -t * 2.6 + drift);
-        oscCarrierPath = buildOscWavePath(ampCarrier, 1, t * 1.35);
-        oscPhaseLabel = `${drift >= 0 ? '+' : ''}${drift.toFixed(2)}`;
+        const basePhase = -t * 2.6;
+        const secPhase = basePhase + (1 - blend) * (Math.PI + rawDrift);
+
+        oscPrimaryPath = buildOscWavePath(ampPrimary, 2, basePhase);
+        oscSecondaryPath = buildOscWavePath(ampSecondary, 2, secPhase);
+        oscCarrierPath =
+          blend > 0.001
+            ? buildBlendedOscWavePath(ampCarrier, 1, t * 1.35, ampPrimary, 2, basePhase, blend)
+            : buildOscWavePath(ampCarrier, 1, t * 1.35);
+        oscPhaseLabel = `${phaseError >= 0 ? '+' : ''}${phaseError.toFixed(2)}`;
       }
       rafId = requestAnimationFrame(step);
     };
@@ -1819,10 +1871,21 @@
             </div>
 
             <!-- NERV Harmonic Oscilloscope & Neural Sync Readout -->
-            <div class="hero-oscilloscope" aria-hidden="true">
+            <div
+              class="hero-oscilloscope"
+              class:syncing={oscSyncState === 'syncing'}
+              class:locked={oscSyncState === 'locked'}
+              aria-hidden="true"
+            >
               <div class="osc-header">
                 <span>HARMONIC_SYNC // 波形同期</span>
-                <span class="osc-val">PHASE: {oscPhaseLabel}</span>
+                <span
+                  class="osc-val"
+                  class:syncing={oscSyncState === 'syncing'}
+                  class:locked={oscSyncState === 'locked'}
+                >
+                  PHASE: {oscPhaseLabel}
+                </span>
               </div>
               <svg viewBox="0 0 260 76" class="osc-svg" preserveAspectRatio="none">
                 <defs>
@@ -1861,7 +1924,15 @@
               </svg>
               <div class="osc-footer">
                 <span>00: ORIGIN</span>
-                <span class="osc-ok">SIGNAL: NOMINAL</span>
+                <span class="osc-ok" class:syncing={oscSyncState === 'syncing'}>
+                  {#if oscSyncState === 'locked'}
+                    SIGNAL: LOCKED
+                  {:else if oscSyncState === 'syncing'}
+                    SYNCING: {Math.round(oscSyncProgress * 100)}%
+                  {:else}
+                    SIGNAL: NOMINAL
+                  {/if}
+                </span>
                 <span>02: MESH</span>
               </div>
             </div>
@@ -3205,6 +3276,12 @@
     flex-direction: column;
     gap: 5px;
     box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.9);
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+  }
+
+  .hero-oscilloscope.locked {
+    border-color: rgba(57, 255, 106, 0.55);
+    box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.9), 0 0 12px rgba(57, 255, 106, 0.12);
   }
 
   .osc-header,
@@ -3222,12 +3299,28 @@
     color: #ff2a4d;
     font-weight: bold;
     font-variant-numeric: tabular-nums;
+    transition: color 0.3s ease;
+  }
+
+  .osc-val.syncing {
+    color: #ff9900;
+  }
+
+  .osc-val.locked {
+    color: #39ff6a;
+    text-shadow: 0 0 6px rgba(57, 255, 106, 0.5);
   }
 
   .osc-ok {
     color: #39ff6a;
     font-weight: bold;
     text-shadow: 0 0 6px rgba(57, 255, 106, 0.5);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .osc-ok.syncing {
+    color: #ff9900;
+    text-shadow: 0 0 6px rgba(255, 153, 0, 0.45);
   }
 
   .osc-svg {
