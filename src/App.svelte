@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
   import { P2PMesh, type StationState, type PeerNodeInfo, type ToastVariant, type StationActionEvent } from './lib/p2p-mesh';
@@ -180,36 +180,60 @@
   let publicStations = $state<PublicStationEntry[]>([]);
   let publicStationsLoading = $state<boolean>(false);
   let scanSweepIdx = $state<number>(-1);
+  let stationsFetchSeq = 0;
+  let stationsFetchController: AbortController | null = null;
 
   async function fetchPublicStations(manual = false) {
-    if (publicStationsLoading) return;
-    publicStationsLoading = true;
+    if (!manual && stationsFetchController) return;
+    if (manual && stationsFetchController) {
+      stationsFetchController.abort();
+      stationsFetchController = null;
+    }
+
+    const seq = ++stationsFetchSeq;
+    const controller = new AbortController();
+    stationsFetchController = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     let sweepTimer: ReturnType<typeof setInterval> | null = null;
     if (manual) {
+      publicStationsLoading = true;
       scanSweepIdx = 0;
       sweepTimer = setInterval(() => {
         scanSweepIdx = (scanSweepIdx + 1) % METER_SEGMENTS.length;
       }, 65);
     }
+
     try {
-      const req = fetch('/__p2p_relay/stations').then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        const list = Array.isArray(data?.stations) ? (data.stations as PublicStationEntry[]) : [];
-        list.sort((a, b) => (b.listeners - a.listeners) || a.stationId.localeCompare(b.stationId));
-        publicStations = list;
-      });
+      const req = fetch('/__p2p_relay/stations', { signal: controller.signal })
+        .then(async (res) => {
+          if (!res.ok || seq !== stationsFetchSeq) return;
+          const data = await res.json();
+          if (seq !== stationsFetchSeq) return;
+          const list = Array.isArray(data?.stations) ? (data.stations as PublicStationEntry[]) : [];
+          list.sort((a, b) => (b.listeners - a.listeners) || a.stationId.localeCompare(b.stationId));
+          publicStations = list;
+        })
+        .catch(() => {
+          // ignore transient network errors or aborts
+        });
       if (manual) {
         await Promise.all([req, new Promise((resolve) => setTimeout(resolve, 560))]);
       } else {
         await req;
       }
     } catch {
-      // ignore transient network errors
+      // ignore transient network errors or aborts
     } finally {
+      clearTimeout(timeoutId);
+      if (stationsFetchController === controller) {
+        stationsFetchController = null;
+      }
       if (sweepTimer) clearInterval(sweepTimer);
-      scanSweepIdx = -1;
-      publicStationsLoading = false;
+      if (seq === stationsFetchSeq) {
+        scanSweepIdx = -1;
+        publicStationsLoading = false;
+      }
     }
   }
 
@@ -269,9 +293,13 @@
 
   $effect(() => {
     if (mode !== 'select') return;
-    fetchPublicStations(false);
+    untrack(() => fetchPublicStations(false));
     const timer = setInterval(() => fetchPublicStations(false), 12000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      stationsFetchController?.abort();
+      stationsFetchController = null;
+    };
   });
 
   // Co-DJ track injection invite secret (DJ) and token (Listener)
