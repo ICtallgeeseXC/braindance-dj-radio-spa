@@ -6,11 +6,9 @@ import {
   saveTrackToDisk,
   getTrackFromDisk,
   readTrackChunkFromDisk,
-  purgeOldStorage,
-  MAX_STORAGE_BYTES,
+  cleanupOrphanStorage,
+  clearAllStorage,
 } from './audio-storage';
-
-export { MAX_STORAGE_BYTES as MAX_CACHE_BYTES };
 
 export interface CachedTrackRecord {
   trackId: string;
@@ -27,8 +25,8 @@ export async function saveTrackToCache(
   _chunks?: ChunkPayload[],
   protectedTrackIds?: Iterable<string>
 ): Promise<void> {
-  await saveTrackToDisk(trackId, manifest, blob);
-  await purgeOldStorage(protectedTrackIds);
+  await saveTrackToDisk(trackId, manifest, blob, protectedTrackIds);
+  await cleanupOrphanStorage();
 }
 
 export async function getTrackFromCache(trackId: string): Promise<CachedTrackRecord | null> {
@@ -57,7 +55,7 @@ export async function getCacheUsageBytes(): Promise<number> {
 }
 
 export async function clearTrackCache(): Promise<void> {
-  await purgeOldStorage();
+  await clearAllStorage();
 }
 
 export { readTrackChunkFromDisk };

@@ -158,6 +158,7 @@ export class TrackBuffer {
   private opfsInitPromise: Promise<boolean> | null = null;
   private pendingInitChunks: Array<{ chunkIndex: number; data: ArrayBuffer }> = [];
   private isFinalizing: boolean = false;
+  private isDestroyed: boolean = false;
 
   // In-memory fallback only used if OPFS is unavailable or fails
   private fallbackChunks: Map<number, Uint8Array> | null = null;
@@ -168,6 +169,14 @@ export class TrackBuffer {
       this.opfsWriter = new OPFSTrackWriter();
       this.opfsInitPromise = this.opfsWriter.init(manifest.trackId, manifest.totalSize).then((ok) => {
         this.opfsInitPromise = null;
+        if (this.isDestroyed || this.isComplete) {
+          if (this.opfsWriter) {
+            this.opfsWriter.abort();
+            this.opfsWriter = null;
+          }
+          this.pendingInitChunks = [];
+          return false;
+        }
         if (ok && this.opfsWriter && this.opfsWriter.isReady) {
           for (const item of this.pendingInitChunks) {
             this.opfsWriter.writeChunk(item.chunkIndex, CHUNK_SIZE, item.data);
@@ -279,9 +288,16 @@ export class TrackBuffer {
   }
 
   loadFromCachedBlob(blob: Blob, _chunks?: ChunkPayload[]) {
+    if (this.isDestroyed) return;
     this.blob = blob;
     this.blobUrl = URL.createObjectURL(blob);
     this.isComplete = true;
+    this.isFinalizing = false;
+    this.pendingInitChunks = [];
+    if (this.opfsWriter) {
+      this.opfsWriter.abort();
+      this.opfsWriter = null;
+    }
     for (let i = 0; i < this.manifest.totalChunks; i++) {
       this.receivedIndexes.add(i);
     }
@@ -289,12 +305,10 @@ export class TrackBuffer {
       this.fallbackChunks.clear();
       this.fallbackChunks = null;
     }
-    if (this.onComplete && this.blob && this.blobUrl) {
-      this.onComplete(this.blob, this.blobUrl);
-    }
   }
 
   destroy() {
+    this.isDestroyed = true;
     if (this.blobUrl) {
       URL.revokeObjectURL(this.blobUrl);
       this.blobUrl = null;

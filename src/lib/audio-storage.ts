@@ -5,7 +5,16 @@
 
 import { CHUNK_SIZE, type TrackManifest } from './chunk-pipeline';
 
-export const MAX_STORAGE_BYTES = 350 * 1024 * 1024; // 350MB persistent storage quota
+// No artificial track count or byte limit enforced here; the browser natively manages
+// origin storage quota and LRU eviction across OPFS / Cache Storage.
+// Cleanup only triggers on explicit clear or as an emergency fallback on QuotaExceededError.
+
+function isQuotaExceededError(err: unknown): boolean {
+  return (
+    err instanceof DOMException &&
+    (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+  );
+}
 
 export function isOPFSSupported(): boolean {
   return (
@@ -109,76 +118,93 @@ export class OPFSTrackWriter {
 
 /**
  * Save an assembled track Blob/File directly to disk storage (OPFS or Cache API).
+ * Lets the browser manage storage quota and LRU natively, only evicting oldest
+ * unprotected tracks if a QuotaExceededError occurs.
  */
 export async function saveTrackToDisk(
   trackId: string,
   manifest: TrackManifest,
-  blobOrFile: Blob | File
+  blobOrFile: Blob | File,
+  protectedTrackIds?: Iterable<string>
 ): Promise<boolean> {
   // 1. Try OPFS first
   if (isOPFSSupported()) {
-    try {
-      const root = await navigator.storage.getDirectory();
-
-      // Check if track_${trackId}.bin already exists and has full size (e.g. from OPFSTrackWriter)
-      let needsBinaryWrite = true;
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const existingHandle = await root.getFileHandle(`track_${trackId}.bin`);
-        const existingFile = await existingHandle.getFile();
-        if (existingFile.size >= (manifest.totalSize || blobOrFile.size)) {
-          needsBinaryWrite = false;
-          opfsFileHandleCache.set(trackId, existingHandle);
+        const root = await navigator.storage.getDirectory();
+
+        // Check if track_${trackId}.bin already exists and has full size (e.g. from OPFSTrackWriter)
+        let needsBinaryWrite = true;
+        try {
+          const existingHandle = await root.getFileHandle(`track_${trackId}.bin`);
+          const existingFile = await existingHandle.getFile();
+          if (existingFile.size >= (manifest.totalSize || blobOrFile.size)) {
+            needsBinaryWrite = false;
+            opfsFileHandleCache.set(trackId, existingHandle);
+          }
+        } catch {
+          needsBinaryWrite = true;
         }
-      } catch {
-        needsBinaryWrite = true;
-      }
 
-      if (needsBinaryWrite) {
-        const fileHandle = await root.getFileHandle(`track_${trackId}.bin`, { create: true });
-        if (typeof (fileHandle as any).createWritable !== 'function') {
-          await root.removeEntry(`track_${trackId}.bin`).catch(() => {});
-          throw new Error('OPFS createWritable unavailable');
+        if (needsBinaryWrite) {
+          const fileHandle = await root.getFileHandle(`track_${trackId}.bin`, { create: true });
+          if (typeof (fileHandle as any).createWritable !== 'function') {
+            await root.removeEntry(`track_${trackId}.bin`).catch(() => {});
+            throw new Error('OPFS createWritable unavailable');
+          }
+          const writable = await (fileHandle as any).createWritable();
+          await writable.write(blobOrFile);
+          await writable.close();
+          opfsFileHandleCache.set(trackId, fileHandle);
+          console.log(`[Storage] Saved "${manifest.title}" (${(blobOrFile.size / (1024 * 1024)).toFixed(1)}MB) directly to OPFS`);
         }
-        const writable = await (fileHandle as any).createWritable();
-        await writable.write(blobOrFile);
-        await writable.close();
-        opfsFileHandleCache.set(trackId, fileHandle);
-        console.log(`[Storage] Saved "${manifest.title}" (${(blobOrFile.size / (1024 * 1024)).toFixed(1)}MB) directly to OPFS`);
-      }
 
-      // Always save or update manifest metadata JSON
-      try {
-        const manifestHandle = await root.getFileHandle(`manifest_${trackId}.json`, { create: true });
-        const mWritable = await (manifestHandle as any).createWritable();
-        await mWritable.write(JSON.stringify(manifest));
-        await mWritable.close();
-      } catch (mErr) {
-        console.warn('[Storage] Error saving manifest JSON:', mErr);
-      }
+        // Always save or update manifest metadata JSON
+        try {
+          const manifestHandle = await root.getFileHandle(`manifest_${trackId}.json`, { create: true });
+          const mWritable = await (manifestHandle as any).createWritable();
+          await mWritable.write(JSON.stringify(manifest));
+          await mWritable.close();
+        } catch (mErr) {
+          console.warn('[Storage] Error saving manifest JSON:', mErr);
+        }
 
-      return true;
-    } catch (err) {
-      console.warn('[Storage] OPFS save failed, trying Cache API fallback:', err);
+        return true;
+      } catch (err) {
+        if (attempt === 0 && isQuotaExceededError(err)) {
+          await evictOldestTracksForQuota(protectedTrackIds, blobOrFile.size || manifest.totalSize);
+          continue;
+        }
+        console.warn('[Storage] OPFS save failed, trying Cache API fallback:', err);
+        break;
+      }
     }
   }
 
   // 2. Cache API fallback
   if (isCacheAPISupported()) {
-    try {
-      const cache = await caches.open('p2p_radio_audio_v1');
-      const response = new Response(blobOrFile, {
-        headers: {
-          'Content-Type': manifest.mimeType || 'audio/flac',
-          'X-Manifest': encodeURIComponent(JSON.stringify(manifest)),
-          'X-Track-Id': trackId,
-          'X-Saved-At': String(Date.now()),
-        },
-      });
-      await cache.put(`/track/${trackId}`, response);
-      console.log(`[Storage] Saved "${manifest.title}" (${(blobOrFile.size / (1024 * 1024)).toFixed(1)}MB) to Cache API`);
-      return true;
-    } catch (err) {
-      console.warn('[Storage] Cache API save failed:', err);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const cache = await caches.open('p2p_radio_audio_v1');
+        const response = new Response(blobOrFile, {
+          headers: {
+            'Content-Type': manifest.mimeType || 'audio/flac',
+            'X-Manifest': encodeURIComponent(JSON.stringify(manifest)),
+            'X-Track-Id': trackId,
+            'X-Saved-At': String(Date.now()),
+          },
+        });
+        await cache.put(`/track/${trackId}`, response);
+        console.log(`[Storage] Saved "${manifest.title}" (${(blobOrFile.size / (1024 * 1024)).toFixed(1)}MB) to Cache API`);
+        return true;
+      } catch (err) {
+        if (attempt === 0 && isQuotaExceededError(err)) {
+          await evictOldestTracksForQuota(protectedTrackIds, blobOrFile.size || manifest.totalSize);
+          continue;
+        }
+        console.warn('[Storage] Cache API save failed:', err);
+        break;
+      }
     }
   }
 
@@ -270,83 +296,119 @@ export async function readTrackChunkFromDisk(
 }
 
 /**
- * Clean up old tracks from storage to stay under MAX_STORAGE_BYTES quota.
+ * Remove stale temp files and orphan manifests left behind after crashes/aborts.
+ * Does not delete cached tracks — the browser manages origin quota and LRU natively.
  */
-export async function purgeOldStorage(protectedTrackIds?: Iterable<string>): Promise<void> {
-  const protectedSet = new Set<string>(protectedTrackIds || []);
+export async function cleanupOrphanStorage(): Promise<void> {
+  if (!isOPFSSupported()) return;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const activeTrackIds = new Set<string>();
+    const manifestTrackIds: string[] = [];
 
-  // Cache API purge
+    for await (const [name, handle] of (root as any).entries()) {
+      if (name.startsWith('temp_')) {
+        await root.removeEntry(name).catch(() => {});
+        continue;
+      }
+      const trackMatch = /^track_(.+)\.bin$/.exec(name);
+      if (trackMatch && handle?.kind === 'file') {
+        activeTrackIds.add(trackMatch[1]);
+        continue;
+      }
+      const manifestMatch = /^manifest_(.+)\.json$/.exec(name);
+      if (manifestMatch) {
+        manifestTrackIds.push(manifestMatch[1]);
+      }
+    }
+
+    for (const orphanId of manifestTrackIds) {
+      if (!activeTrackIds.has(orphanId)) {
+        await root.removeEntry(`manifest_${orphanId}.json`).catch(() => {});
+      }
+    }
+  } catch {}
+}
+
+/**
+ * Emergency fallback invoked only if the browser rejects a write with QuotaExceededError:
+ * evicts the oldest unprotected tracks until enough headroom is freed for the incoming track.
+ */
+async function evictOldestTracksForQuota(
+  protectedTrackIds: Iterable<string> | undefined,
+  neededBytes: number
+): Promise<void> {
+  const protectedSet = new Set<string>(protectedTrackIds || []);
+  let freedBytes = 0;
+  const targetFree = Math.max(neededBytes, 32 * 1024 * 1024);
+
   if (isCacheAPISupported()) {
     try {
       const cache = await caches.open('p2p_radio_audio_v1');
       const keys = await cache.keys();
-      const evictable = keys.filter((req) => {
+      for (const req of keys) {
+        if (freedBytes >= targetFree) break;
         const match = req.url.match(/\/track\/([^/?#]+)$/);
-        return !match || !protectedSet.has(match[1]);
-      });
-      if (evictable.length > 5) {
-        for (let i = 0; i < evictable.length - 5; i++) {
-          await cache.delete(evictable[i]);
-        }
+        if (match && protectedSet.has(match[1])) continue;
+        await cache.delete(req);
+        freedBytes += 10 * 1024 * 1024;
       }
     } catch {}
   }
 
-  // OPFS purge: evict stale temp files, orphan manifests, and oldest tracks beyond 5 files or quota
   if (isOPFSSupported()) {
     try {
       const root = await navigator.storage.getDirectory();
       const tracks: Array<{ trackId: string; lastModified: number; size: number }> = [];
-      const manifestTrackIds: string[] = [];
-      let totalBytes = 0;
 
       for await (const [name, handle] of (root as any).entries()) {
         if (name.startsWith('temp_')) {
-          try {
-            await root.removeEntry(name);
-          } catch {}
+          await root.removeEntry(name).catch(() => {});
           continue;
         }
         const trackMatch = /^track_(.+)\.bin$/.exec(name);
         if (trackMatch && handle?.kind === 'file') {
           try {
             const file = await handle.getFile();
-            const size = file?.size || 0;
-            totalBytes += size;
             tracks.push({
               trackId: trackMatch[1],
               lastModified: file?.lastModified || 0,
-              size
+              size: file?.size || 0,
             });
           } catch {}
-          continue;
-        }
-        const manifestMatch = /^manifest_(.+)\.json$/.exec(name);
-        if (manifestMatch) {
-          manifestTrackIds.push(manifestMatch[1]);
         }
       }
 
-      const activeTrackSet = new Set(tracks.map((t) => t.trackId));
-      for (const orphanId of manifestTrackIds) {
-        if (!activeTrackSet.has(orphanId)) {
-          await root.removeEntry(`manifest_${orphanId}.json`).catch(() => {});
-        }
-      }
-
-      // Oldest first so newest 5 tracks are preserved unless quota requires further trimming
       tracks.sort((a, b) => a.lastModified - b.lastModified);
-      let remainingCount = tracks.length;
-
       for (const entry of tracks) {
+        if (freedBytes >= targetFree) break;
         if (protectedSet.has(entry.trackId)) continue;
-        if (remainingCount <= 5 && totalBytes <= MAX_STORAGE_BYTES) break;
-
         opfsFileHandleCache.delete(entry.trackId);
         await root.removeEntry(`track_${entry.trackId}.bin`).catch(() => {});
         await root.removeEntry(`manifest_${entry.trackId}.json`).catch(() => {});
-        remainingCount--;
-        totalBytes = Math.max(0, totalBytes - entry.size);
+        freedBytes += entry.size;
+      }
+    } catch {}
+  }
+}
+
+/**
+ * Explicitly clear all cached tracks and metadata from storage.
+ */
+export async function clearAllStorage(): Promise<void> {
+  opfsFileHandleCache.clear();
+  if (isCacheAPISupported()) {
+    try {
+      await caches.delete('p2p_radio_audio_v1');
+    } catch {}
+  }
+  if (isOPFSSupported()) {
+    try {
+      const root = await navigator.storage.getDirectory();
+      for await (const [name] of (root as any).entries()) {
+        if (name.startsWith('track_') || name.startsWith('manifest_') || name.startsWith('temp_')) {
+          await root.removeEntry(name).catch(() => {});
+        }
       }
     } catch {}
   }
