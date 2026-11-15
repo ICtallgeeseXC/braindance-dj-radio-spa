@@ -175,23 +175,90 @@
     updatedAt: number;
   }
 
+  const METER_SEGMENTS = [0, 1, 2, 3, 4, 5, 6, 7];
+
   let publicStations = $state<PublicStationEntry[]>([]);
   let publicStationsLoading = $state<boolean>(false);
+  let scanSweepIdx = $state<number>(-1);
 
-  async function fetchPublicStations() {
+  async function fetchPublicStations(manual = false) {
+    if (publicStationsLoading) return;
     publicStationsLoading = true;
+    let sweepTimer: ReturnType<typeof setInterval> | null = null;
+    if (manual) {
+      scanSweepIdx = 0;
+      sweepTimer = setInterval(() => {
+        scanSweepIdx = (scanSweepIdx + 1) % METER_SEGMENTS.length;
+      }, 65);
+    }
     try {
-      const res = await fetch('/__p2p_relay/stations');
-      if (!res.ok) return;
-      const data = await res.json();
-      const list = Array.isArray(data?.stations) ? (data.stations as PublicStationEntry[]) : [];
-      list.sort((a, b) => (b.listeners - a.listeners) || a.stationId.localeCompare(b.stationId));
-      publicStations = list;
+      const req = fetch('/__p2p_relay/stations').then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data?.stations) ? (data.stations as PublicStationEntry[]) : [];
+        list.sort((a, b) => (b.listeners - a.listeners) || a.stationId.localeCompare(b.stationId));
+        publicStations = list;
+      });
+      if (manual) {
+        await Promise.all([req, new Promise((resolve) => setTimeout(resolve, 560))]);
+      } else {
+        await req;
+      }
     } catch {
       // ignore transient network errors
     } finally {
+      if (sweepTimer) clearInterval(sweepTimer);
+      scanSweepIdx = -1;
       publicStationsLoading = false;
     }
+  }
+
+  // Reactive telemetry bars for UNIT-01 (DJ) and UNIT-02 (Listener)
+  const uplinkLitCount = $derived.by(() => {
+    if (uploadProcessing) return 8;
+    const base = isPublicStation ? 6 : 3;
+    return Math.min(8, base + (djFiles.length > 0 ? 2 : 0));
+  });
+
+  const uplinkLabel = $derived.by(() => {
+    if (uploadProcessing) return 'ENCODING';
+    if (djFiles.length > 0) return isPublicStation ? 'PUB_ARM' : 'PRV_ARM';
+    return isPublicStation ? 'PUBLIC' : 'PRIVATE';
+  });
+
+  const codecLitCount = $derived(uploadProcessing ? 8 : autoCompressMp3 ? 8 : 4);
+  const codecLabel = $derived(uploadProcessing ? 'TRANSCODE' : autoCompressMp3 ? '128K MP3' : 'RAW FLAC');
+
+  const trimmedTargetStation = $derived(stationCode.trim().toLowerCase());
+  const targetMatchesPublic = $derived(
+    trimmedTargetStation.length > 0 &&
+      publicStations.some((st) => st.stationId.toLowerCase() === trimmedTargetStation)
+  );
+
+  const syncColorMode = $derived<'green' | 'amber' | 'red'>(
+    scanSweepIdx >= 0
+      ? 'amber'
+      : targetMatchesPublic || publicStations.length > 0
+        ? 'green'
+        : 'red'
+  );
+
+  const syncLabel = $derived.by(() => {
+    if (scanSweepIdx >= 0) return 'SCANNING';
+    if (targetMatchesPublic) return 'MATCH';
+    if (trimmedTargetStation.length > 0) return 'ARMED';
+    if (publicStations.length > 0) return `${publicStations.length} LIVE`;
+    return 'STANDBY';
+  });
+
+  function isSyncSegActive(idx: number): boolean {
+    if (scanSweepIdx >= 0) {
+      return idx === scanSweepIdx || idx === (scanSweepIdx + METER_SEGMENTS.length - 1) % METER_SEGMENTS.length;
+    }
+    if (targetMatchesPublic) return idx < 8;
+    if (trimmedTargetStation.length > 0) return idx < 6;
+    if (publicStations.length > 0) return idx < Math.min(8, 2 + publicStations.length);
+    return idx < 2;
   }
 
   $effect(() => {
@@ -202,8 +269,8 @@
 
   $effect(() => {
     if (mode !== 'select') return;
-    fetchPublicStations();
-    const timer = setInterval(fetchPublicStations, 12000);
+    fetchPublicStations(false);
+    const timer = setInterval(() => fetchPublicStations(false), 12000);
     return () => clearInterval(timer);
   });
 
@@ -1838,20 +1905,22 @@
                 <div class="meter-row">
                   <span class="meter-idx">00</span>
                   <span class="meter-name">UPLINK_BUS</span>
-                  <div class="meter-segs">
-                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
-                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg"></span>
+                  <div class="meter-segs" class:green={djFiles.length > 0 && isPublicStation}>
+                    {#each METER_SEGMENTS as idx (idx)}
+                      <span class="seg" class:on={idx < uplinkLitCount}></span>
+                    {/each}
                   </div>
-                  <span class="meter-stat">RDY</span>
+                  <span class="meter-stat" class:ok={djFiles.length > 0 && isPublicStation}>{uplinkLabel}</span>
                 </div>
                 <div class="meter-row">
                   <span class="meter-idx">01</span>
                   <span class="meter-name">CODEC_STAGE</span>
-                  <div class="meter-segs green">
-                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
-                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
+                  <div class="meter-segs" class:green={autoCompressMp3}>
+                    {#each METER_SEGMENTS as idx (idx)}
+                      <span class="seg" class:on={idx < codecLitCount}></span>
+                    {/each}
                   </div>
-                  <span class="meter-stat ok">FLAC/MP3</span>
+                  <span class="meter-stat" class:ok={autoCompressMp3}>{codecLabel}</span>
                 </div>
               </div>
 
@@ -1977,22 +2046,31 @@
                 <div class="meter-row">
                   <span class="meter-idx red">02</span>
                   <span class="meter-name">SYNC_RATIO</span>
-                  <div class="meter-segs red">
-                    <span class="seg on"></span><span class="seg on"></span><span class="seg on"></span><span class="seg on"></span>
-                    <span class="seg on"></span><span class="seg on"></span><span class="seg"></span><span class="seg"></span>
+                  <div
+                    class="meter-segs"
+                    class:green={syncColorMode === 'green'}
+                    class:red={syncColorMode === 'red'}
+                  >
+                    {#each METER_SEGMENTS as idx (idx)}
+                      <span class="seg" class:on={isSyncSegActive(idx)}></span>
+                    {/each}
                   </div>
-                  <span class="meter-stat warn">STANDBY</span>
+                  <span
+                    class="meter-stat"
+                    class:ok={syncColorMode === 'green'}
+                    class:warn={syncColorMode === 'red'}
+                  >{syncLabel}</span>
                 </div>
               </div>
 
               <!-- Live Public Stations Directory -->
-              <div class="public-directory-box">
+              <div class="public-directory-box" class:scanning={scanSweepIdx >= 0}>
                 <div class="dir-header">
                   <span class="dir-title">PUBLIC_STATIONS // 公開放送局</span>
                   <button
                     type="button"
                     class="dir-scan-btn"
-                    onclick={fetchPublicStations}
+                    onclick={() => fetchPublicStations(true)}
                     disabled={publicStationsLoading}
                   >
                     {publicStationsLoading ? 'SCANNING...' : 'RESCAN'}
@@ -2000,7 +2078,11 @@
                 </div>
 
                 {#if publicStations.length === 0}
-                  <div class="dir-empty">NO PUBLIC TRANSMISSIONS DETECTED // ENTER CALLSIGN</div>
+                  <div class="dir-empty">
+                    {scanSweepIdx >= 0
+                      ? 'SWEEPING MESH FREQUENCIES // STANDBY'
+                      : 'NO PUBLIC TRANSMISSIONS DETECTED // ENTER CALLSIGN'}
+                  </div>
                 {:else}
                   <div class="dir-list">
                     {#each publicStations as st, idx (st.stationId)}
@@ -3378,6 +3460,7 @@
     flex: 1;
     background: rgba(255, 119, 0, 0.14);
     border: 1px solid rgba(255, 119, 0, 0.28);
+    transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
   }
 
   .meter-segs .seg.on {
@@ -3409,6 +3492,8 @@
     color: #ff9900;
     font-weight: bold;
     letter-spacing: 0.06em;
+    min-width: 64px;
+    text-align: right;
   }
 
   .meter-stat.ok {
@@ -3658,6 +3743,17 @@
     flex-direction: column;
     gap: 8px;
     font-family: var(--font-mono);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .public-directory-box.scanning {
+    border-color: rgba(255, 119, 0, 0.65);
+    border-left-color: #ff9900;
+    box-shadow: inset 0 0 14px rgba(255, 119, 0, 0.12);
+  }
+
+  .public-directory-box.scanning .dir-empty {
+    color: #ff9900;
   }
 
   .dir-header {
