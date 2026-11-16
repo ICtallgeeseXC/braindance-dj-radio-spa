@@ -1,47 +1,127 @@
-# Svelte + TS + Vite
+<div align="center">
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+<img src="public/favicon.svg" alt="BRAINDANCE // RADIO" width="88" height="88" />
 
-## Recommended IDE Setup
+# BRAINDANCE // RADIO
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+**Decentralized, clock-synchronized P2P internet radio — NERV/MAGI tactical edition.**
 
-## Need an official Svelte framework?
+Stream lossless FLAC or MP3 tracks directly from your browser across a self-healing WebRTC + WebSocket relay pyramid mesh with zero cloud audio storage.
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
+[![Live Demo](https://img.shields.io/badge/LIVE_DEMO-braindance.tallgeese.workers.dev-ff7b00?style=for-the-badge&logo=cloudflareworkers&logoColor=white&labelColor=04050a)](https://braindance.tallgeese.workers.dev)
+[![Svelte 5](https://img.shields.io/badge/Svelte-5-ff3e00?style=flat-square&logo=svelte&logoColor=white&labelColor=0b0e17)](https://svelte.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178c6?style=flat-square&logo=typescript&logoColor=white&labelColor=0b0e17)](https://www.typescriptlang.org/)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Durable_Objects-f38020?style=flat-square&logo=cloudflare&logoColor=white&labelColor=0b0e17)](https://developers.cloudflare.com/durable-objects/)
 
-## Technical considerations
+**[Launch Live Demo](https://braindance.tallgeese.workers.dev)** · [Architecture](#architecture) · [Features](#features) · [Local Development](#local-development) · [Deploy](#deploy-to-cloudflare-workers)
 
-**Why use this over SvelteKit?**
+</div>
 
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
+---
 
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
+## Overview
 
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
+In **BRAINDANCE // RADIO**, the DJ's browser acts as the **Central Dogma** broadcast origin. Tracks are chunked in `48 KB` frames, SHA-256 verified, and fanned out through a dynamic tree of connected listeners (`PeerJS` WebRTC with transparent fallback to a Cloudflare Durable Object WebSocket relay on `/__p2p_relay`).
 
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
+No audio files are uploaded to a central media server — peers relay chunks downstream to other listeners while streaming straight to browser **OPFS** (Origin Private File System) disk storage.
 
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
+## Live Demo
 
-**Why include `.vscode/extensions.json`?**
+> **[https://braindance.tallgeese.workers.dev](https://braindance.tallgeese.workers.dev)**
 
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
+- **Host a Station (UNIT-01):** Drop `.flac` or `.mp3` files, choose a callsign (publicly listed or unlisted private), optionally auto-transcode to `128kbps` MP3 in a background Web Worker, and initiate transmission.
+- **Tune In (UNIT-02):** Pick an active broadcast from the live `PUBLIC_STATIONS` directory or enter any station callsign / invite link.
 
-**Why enable `allowJs` in the TS template?**
+## Features
 
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
+- **Hybrid WebRTC + WebSocket Relay Mesh ([`p2p-mesh.ts`](src/lib/p2p-mesh.ts)):** Establishes direct peer-to-peer WebRTC data channels via PeerJS and automatically bridges strict NATs/firewalls through the edge `/__p2p_relay` WebSocket tunnel with auto-healing parent failover.
+- **Clock-Locked Synchronized Playback ([`time-sync.ts`](src/lib/time-sync.ts), [`player-controller.ts`](src/lib/player-controller.ts)):** Computes network clock offset against the DJ origin so all listeners hear the same beat within tight drift tolerances, pre-buffering the upcoming track cleanly.
+- **Zero-Copy OPFS Disk Streaming ([`audio-storage.ts`](src/lib/audio-storage.ts), [`chunk-pipeline.ts`](src/lib/chunk-pipeline.ts)):** Streams incoming audio chunks directly to OPFS (`track_<id>.bin`) with Cache Storage API fallback instead of holding large lossless files in JS heap memory.
+- **Client-Side MP3 Transcoding ([`audio-encoder.ts`](src/lib/audio-encoder.ts)):** Optional Web Worker encoding (`@breezystack/lamejs`) compresses ~25 MB FLAC tracks down to ~2 MB `128kbps` MP3 streams to cut peer relay bandwidth ~90%.
+- **Cryptographic Origin & Chunk Verification:** Signs `StationState` broadcasts with ECDSA (`P-256` / `SHA-256`), validates per-chunk SHA-256 digests to drop forged/corrupted chunks, enforces host ownership tokens, and gates Co-DJ track injection behind invite secrets.
+- **NERV / MAGI Tactical Interface:** Live SVG/Canvas topology graph ([`PyramidTree.svelte`](src/lib/PyramidTree.svelte)), audio-reactive spectrum/mode-666 visualizers ([`EvaTimer.svelte`](src/lib/EvaTimer.svelte)), buffer telemetry ([`EvaBufferAnalysis.svelte`](src/lib/EvaBufferAnalysis.svelte)), and emergency broadcast banner ([`EmergencyBanner.svelte`](src/lib/EmergencyBanner.svelte)).
+- **Offline-Ready PWA ([`sw.js`](public/sw.js), [`manifest.webmanifest`](public/manifest.webmanifest)):** Versioned service worker shell pre-caching with automatic commit-tagged cache rotation on build.
 
-**Why is HMR not preserving my local component state?**
+## Architecture
 
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
+```mermaid
+flowchart TD
+    DJ["UNIT-01: DJ Origin (Browser)<br/>ECDSA Signed Timeline + 48KB Chunks"]
+    Relay["Edge Relay / Signaling<br/>Cloudflare Durable Object (/__p2p_relay)"]
+    P1["Listener Node L1<br/>OPFS Stream + Relay Child"]
+    P2["Listener Node L1<br/>OPFS Stream + Relay Child"]
+    P3["Listener Node L2<br/>Clock-Locked Playback"]
+    P4["Listener Node L2<br/>Clock-Locked Playback"]
 
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
+    DJ -->|WebRTC / WS Relay| P1
+    DJ -->|WebRTC / WS Relay| P2
+    DJ -.->|Heartbeat + Public Directory| Relay
+    Relay -.->|NAT Failover / Discovery| P1
+    Relay -.->|NAT Failover / Discovery| P2
+    P1 -->|P2P Tree Relay| P3
+    P2 -->|P2P Tree Relay| P4
+```
 
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+## Project Structure
+
+```text
+p2p-radio/
+├── public/                  # SVG/PNG icons, PWA manifest, fonts, and Service Worker (sw.js)
+├── src/
+│   ├── App.svelte           # Main NERV/MAGI console, DJ/Listener views, harmonic sync & telemetry
+│   └── lib/
+│       ├── p2p-mesh.ts      # Self-healing WebRTC + WebSocket relay tree, ECDSA/token auth
+│       ├── player-controller.ts # Clock-locked HTMLAudio + WebAudio playback & track transitions
+│       ├── chunk-pipeline.ts # 48KB chunking, SHA-256 digests, OPFS TrackBuffer
+│       ├── audio-storage.ts # OPFS streaming writer + Cache API fallback
+│       ├── audio-cache.ts   # Persistent disk cache wrapper
+│       ├── audio-encoder.ts # Web Worker 128kbps MP3 transcoder (@breezystack/lamejs)
+│       ├── audio-metadata.ts# FLAC/ID3 metadata & embedded cover art parser
+│       ├── time-sync.ts     # Origin clock offset estimator
+│       └── *.svelte         # PyramidTree, EvaTimer, EvaBufferAnalysis, MagiComputing, etc.
+├── worker/
+│   └── relay-worker.ts      # Cloudflare Worker + P2PRelayDO Durable Object (/__p2p_relay)
+├── vite-relay-plugin.ts     # Local Vite dev relay & directory server plugin
+├── vite.config.ts           # Build config, version/commit injection, SW cache stamping
+└── wrangler.jsonc           # Cloudflare Workers deployment config
+```
+
+## Local Development
+
+**Prerequisites:** Node.js `20+` and `npm`.
+
+```bash
+# Install dependencies
+npm install
+
+# Start Vite dev server (includes local /__p2p_relay WebSocket & station directory plugin)
+npm run dev
+```
+
+Type-check and verify production bundle:
+
+```bash
+npm run check
+npm run build
+```
+
+> **Local tunnel testing:** `vite.config.ts` binds `host: true`, so you can expose your dev server to phones or remote listeners via Cloudflare Tunnel / ngrok and test WebRTC + WebSocket fallback immediately.
+
+## Deploy to Cloudflare Workers
+
+Deployment targets the `braindance` Worker + `P2PRelayDO` Durable Object defined in [`wrangler.jsonc`](wrangler.jsonc):
+
+```bash
+# Authenticate once with Cloudflare if needed
+npx wrangler login
+
+# Build static assets + deploy Worker & Durable Objects
+npm run deploy
+```
+
+Or run the Durable Object relay locally via Wrangler:
+
+```bash
+npm run build
+npx wrangler dev
 ```
