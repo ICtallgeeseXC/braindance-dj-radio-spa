@@ -39,7 +39,7 @@ No audio files are uploaded to a central media server — peers relay chunks dow
 - **Zero-Copy OPFS Disk Streaming ([`audio-storage.ts`](src/lib/audio-storage.ts), [`chunk-pipeline.ts`](src/lib/chunk-pipeline.ts)):** Streams incoming audio chunks directly to OPFS (`track_<id>.bin`) with Cache Storage API fallback instead of holding large lossless files in JS heap memory.
 - **Client-Side MP3 Transcoding ([`audio-encoder.ts`](src/lib/audio-encoder.ts)):** Optional Web Worker encoding (`@breezystack/lamejs`) compresses ~25 MB FLAC tracks down to ~2 MB `128kbps` MP3 streams to cut peer relay bandwidth ~90%.
 - **Cryptographic Origin & Chunk Verification:** Signs `StationState` broadcasts with ECDSA (`P-256` / `SHA-256`), validates per-chunk SHA-256 digests to drop forged/corrupted chunks, enforces host ownership tokens, and gates Co-DJ track injection behind invite secrets.
-- **Live Telemetry & Audio Visualizers:** Real-time topology graph ([`PyramidTree.svelte`](src/lib/PyramidTree.svelte)), audio-reactive spectrum visualizers ([`EvaTimer.svelte`](src/lib/EvaTimer.svelte)), and buffer telemetry ([`EvaBufferAnalysis.svelte`](src/lib/EvaBufferAnalysis.svelte)).
+- **Live Telemetry & Audio Visualizers:** Real-time topology graph ([`PyramidTree.svelte`](src/lib/PyramidTree.svelte)), audio-reactive spectrum visualizers ([`EvaTimer.svelte`](src/lib/EvaTimer.svelte)), and buffer telemetry ([`EvaBufferAnalysis.svelte`](src/lib/EvaBufferAnalysis.svelte)), styled after the Evangelion NERV interface.
 - **Offline-Ready PWA ([`sw.js`](public/sw.js), [`manifest.webmanifest`](public/manifest.webmanifest)):** Versioned service worker shell pre-caching with automatic commit-tagged cache rotation on build.
 
 ## Architecture
