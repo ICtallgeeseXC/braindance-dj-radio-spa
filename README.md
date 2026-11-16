@@ -4,7 +4,7 @@
 
 # BRAINDANCE // RADIO
 
-**Decentralized, clock-synchronized P2P internet radio — NERV/MAGI tactical edition.**
+**Decentralized, clock-synchronized P2P internet radio.**
 
 Stream lossless FLAC or MP3 tracks directly from your browser across a self-healing WebRTC + WebSocket relay pyramid mesh with zero cloud audio storage.
 
@@ -21,7 +21,7 @@ Stream lossless FLAC or MP3 tracks directly from your browser across a self-heal
 
 ## Overview
 
-In **BRAINDANCE // RADIO**, the DJ's browser acts as the **Central Dogma** broadcast origin. Tracks are chunked in `48 KB` frames, SHA-256 verified, and fanned out through a dynamic tree of connected listeners (`PeerJS` WebRTC with transparent fallback to a Cloudflare Durable Object WebSocket relay on `/__p2p_relay`).
+In **BRAINDANCE // RADIO**, the broadcaster's browser acts as the broadcast origin. Tracks are split into `48 KB` chunks, verified with SHA-256 digests, and distributed through a dynamic tree of connected listeners (`PeerJS` WebRTC with transparent fallback to a Cloudflare Durable Object WebSocket relay on `/__p2p_relay`).
 
 No audio files are uploaded to a central media server — peers relay chunks downstream to other listeners while streaming straight to browser **OPFS** (Origin Private File System) disk storage.
 
@@ -29,24 +29,24 @@ No audio files are uploaded to a central media server — peers relay chunks dow
 
 > **[https://braindance.tallgeese.workers.dev](https://braindance.tallgeese.workers.dev)**
 
-- **Host a Station (UNIT-01):** Drop `.flac` or `.mp3` files, choose a callsign (publicly listed or unlisted private), optionally auto-transcode to `128kbps` MP3 in a background Web Worker, and initiate transmission.
-- **Tune In (UNIT-02):** Pick an active broadcast from the live `PUBLIC_STATIONS` directory or enter any station callsign / invite link.
+- **Host a Station (DJ):** Drop `.flac` or `.mp3` files, choose a callsign (publicly listed or unlisted private), optionally auto-transcode to `128kbps` MP3 in a background Web Worker, and start broadcasting.
+- **Tune In (Listener):** Pick an active broadcast from the live public stations directory or enter any station callsign / invite link.
 
 ## Features
 
 - **Hybrid WebRTC + WebSocket Relay Mesh ([`p2p-mesh.ts`](src/lib/p2p-mesh.ts)):** Establishes direct peer-to-peer WebRTC data channels via PeerJS and automatically bridges strict NATs/firewalls through the edge `/__p2p_relay` WebSocket tunnel with auto-healing parent failover.
-- **Clock-Locked Synchronized Playback ([`time-sync.ts`](src/lib/time-sync.ts), [`player-controller.ts`](src/lib/player-controller.ts)):** Computes network clock offset against the DJ origin so all listeners hear the same beat within tight drift tolerances, pre-buffering the upcoming track cleanly.
+- **Clock-Locked Synchronized Playback ([`time-sync.ts`](src/lib/time-sync.ts), [`player-controller.ts`](src/lib/player-controller.ts)):** Computes network clock offset against the broadcast origin so all listeners stay synchronized within tight drift tolerances, pre-buffering the upcoming track cleanly.
 - **Zero-Copy OPFS Disk Streaming ([`audio-storage.ts`](src/lib/audio-storage.ts), [`chunk-pipeline.ts`](src/lib/chunk-pipeline.ts)):** Streams incoming audio chunks directly to OPFS (`track_<id>.bin`) with Cache Storage API fallback instead of holding large lossless files in JS heap memory.
 - **Client-Side MP3 Transcoding ([`audio-encoder.ts`](src/lib/audio-encoder.ts)):** Optional Web Worker encoding (`@breezystack/lamejs`) compresses ~25 MB FLAC tracks down to ~2 MB `128kbps` MP3 streams to cut peer relay bandwidth ~90%.
 - **Cryptographic Origin & Chunk Verification:** Signs `StationState` broadcasts with ECDSA (`P-256` / `SHA-256`), validates per-chunk SHA-256 digests to drop forged/corrupted chunks, enforces host ownership tokens, and gates Co-DJ track injection behind invite secrets.
-- **NERV / MAGI Tactical Interface:** Live SVG/Canvas topology graph ([`PyramidTree.svelte`](src/lib/PyramidTree.svelte)), audio-reactive spectrum/mode-666 visualizers ([`EvaTimer.svelte`](src/lib/EvaTimer.svelte)), buffer telemetry ([`EvaBufferAnalysis.svelte`](src/lib/EvaBufferAnalysis.svelte)), and emergency broadcast banner ([`EmergencyBanner.svelte`](src/lib/EmergencyBanner.svelte)).
+- **Live Telemetry & Audio Visualizers:** Real-time topology graph ([`PyramidTree.svelte`](src/lib/PyramidTree.svelte)), audio-reactive spectrum visualizers ([`EvaTimer.svelte`](src/lib/EvaTimer.svelte)), and buffer telemetry ([`EvaBufferAnalysis.svelte`](src/lib/EvaBufferAnalysis.svelte)).
 - **Offline-Ready PWA ([`sw.js`](public/sw.js), [`manifest.webmanifest`](public/manifest.webmanifest)):** Versioned service worker shell pre-caching with automatic commit-tagged cache rotation on build.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    DJ["UNIT-01: DJ Origin (Browser)<br/>ECDSA Signed Timeline + 48KB Chunks"]
+    DJ["DJ Origin (Browser)<br/>ECDSA Signed Timeline + 48KB Chunks"]
     Relay["Edge Relay / Signaling<br/>Cloudflare Durable Object (/__p2p_relay)"]
     P1["Listener Node L1<br/>OPFS Stream + Relay Child"]
     P2["Listener Node L1<br/>OPFS Stream + Relay Child"]
@@ -68,7 +68,7 @@ flowchart TD
 p2p-radio/
 ├── public/                  # SVG/PNG icons, PWA manifest, fonts, and Service Worker (sw.js)
 ├── src/
-│   ├── App.svelte           # Main NERV/MAGI console, DJ/Listener views, harmonic sync & telemetry
+│   ├── App.svelte           # Main application shell, DJ/Listener views, and telemetry
 │   └── lib/
 │       ├── p2p-mesh.ts      # Self-healing WebRTC + WebSocket relay tree, ECDSA/token auth
 │       ├── player-controller.ts # Clock-locked HTMLAudio + WebAudio playback & track transitions
@@ -78,7 +78,7 @@ p2p-radio/
 │       ├── audio-encoder.ts # Web Worker 128kbps MP3 transcoder (@breezystack/lamejs)
 │       ├── audio-metadata.ts# FLAC/ID3 metadata & embedded cover art parser
 │       ├── time-sync.ts     # Origin clock offset estimator
-│       └── *.svelte         # PyramidTree, EvaTimer, EvaBufferAnalysis, MagiComputing, etc.
+│       └── *.svelte         # UI components (PyramidTree, EvaTimer, EvaBufferAnalysis, etc.)
 ├── worker/
 │   └── relay-worker.ts      # Cloudflare Worker + P2PRelayDO Durable Object (/__p2p_relay)
 ├── vite-relay-plugin.ts     # Local Vite dev relay & directory server plugin
