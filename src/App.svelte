@@ -2484,7 +2484,7 @@
                   type="range"
                   min="0"
                   max="1"
-                  step="0.05"
+                  step="0.01"
                   aria-label="Audio Gain Volume"
                   bind:value={volume}
                   oninput={(e) => {
