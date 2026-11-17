@@ -1147,7 +1147,7 @@
       mimeType: meta.mimeType,
       totalSize: meta.sizeBytes,
       totalChunks: Math.ceil(meta.sizeBytes / CHUNK_SIZE),
-      coverDataUrl: meta.coverUrl,
+      ...(meta.coverUrl ? { coverDataUrl: meta.coverUrl } : {}),
       ...(chunkHashes.length > 0 ? { chunkHashes } : {})
     };
 

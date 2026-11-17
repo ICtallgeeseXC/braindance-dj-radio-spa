@@ -112,6 +112,10 @@ export class P2PMesh {
   private relayConnected: boolean = false;
   private relayReconnectTimer: any = null;
   private relayPingInterval: any = null;
+  private relayStabilityTimer: any = null;
+  private isDestroyed: boolean = false;
+  private hasLoggedRelayOnline: boolean = false;
+  private relayReconnectAttempts: number = 0;
 
   // Direct WebRTC Connections
   private djControlConn: DataConnection | null = null; // Listener -> DJ direct WebRTC control link
@@ -257,6 +261,9 @@ export class P2PMesh {
     persistedHostToken = ''
   ) {
     const cleanStationId = stationId.toLowerCase().trim();
+    this.isDestroyed = false;
+    this.hasLoggedRelayOnline = false;
+    this.relayReconnectAttempts = 0;
     this.stationId = cleanStationId;
     this.isDJ = true;
     this.isPublicBroadcast = isPublic;
@@ -367,13 +374,22 @@ export class P2PMesh {
 
   private enqueueSignedDjDispatch(sendFn: (signedMsg: any) => void, msg: Record<string, unknown>) {
     this.controlSendQueue = this.controlSendQueue.then(async () => {
+      if (this.isDestroyed) return;
+      // Strip undefined keys before signing so PeerJS BinaryPack (which converts undefined -> null)
+      // and JSON relay transport produce identical objects on listeners.
+      let cleanMsg: Record<string, unknown>;
+      try {
+        cleanMsg = JSON.parse(JSON.stringify(msg)) as Record<string, unknown>;
+      } catch {
+        cleanMsg = msg;
+      }
       await this.djKeyReadyPromise;
       if (!this.djSigningKeyPair || !this.djPublicJwk || typeof crypto === 'undefined' || !crypto.subtle) {
-        sendFn(msg);
+        sendFn(cleanMsg);
         return;
       }
       try {
-        const canonical = stableStringify(extractSignablePayload(msg));
+        const canonical = stableStringify(extractSignablePayload(cleanMsg));
         const encoded = new TextEncoder().encode(canonical);
         const sigBuf = await crypto.subtle.sign(
           { name: 'ECDSA', hash: 'SHA-256' },
@@ -381,12 +397,12 @@ export class P2PMesh {
           encoded
         );
         sendFn({
-          ...msg,
+          ...cleanMsg,
           djPubJwk: this.djPublicJwk,
           djSig: bytesToBase64(new Uint8Array(sigBuf))
         });
       } catch {
-        sendFn(msg);
+        sendFn(cleanMsg);
       }
     });
   }
@@ -425,6 +441,9 @@ export class P2PMesh {
   // --- 2. Listener Mode: Join Station ---
 
   public joinStation(stationId: string, injectToken = '') {
+    this.isDestroyed = false;
+    this.hasLoggedRelayOnline = false;
+    this.relayReconnectAttempts = 0;
     this.stationId = stationId.toLowerCase().trim();
     this.isDJ = false;
     this.hasJoinedPyramid = false;
@@ -506,13 +525,23 @@ export class P2PMesh {
 
   // --- 2b. Universal Zero-Config WebSocket Relay Bridge ---
 
+  private detachRelaySocket(ws: WebSocket | null) {
+    if (!ws) return;
+    ws.onopen = null;
+    ws.onmessage = null;
+    ws.onclose = null;
+    ws.onerror = null;
+    try { ws.close(); } catch {}
+  }
+
   private initRelaySocket() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || this.isDestroyed) return;
     if (this.relayWs) {
-      try { this.relayWs.close(); } catch {}
+      this.detachRelaySocket(this.relayWs);
       this.relayWs = null;
     }
     clearTimeout(this.relayReconnectTimer);
+    clearTimeout(this.relayStabilityTimer);
     clearInterval(this.relayPingInterval);
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -525,10 +554,23 @@ export class P2PMesh {
       this.relayWs = ws;
 
       ws.onopen = () => {
+        if (this.isDestroyed || this.relayWs !== ws) {
+          this.detachRelaySocket(ws);
+          return;
+        }
         this.relayConnected = true;
         this.relayEverConnected = true;
         this.relayFailures = 0;
-        this.log(`[RELAY] Universal Tunnel Relay online (NAT/Firewall bypass ready)`);
+        clearTimeout(this.relayStabilityTimer);
+        this.relayStabilityTimer = setTimeout(() => {
+          if (this.relayWs === ws && ws.readyState === WebSocket.OPEN) {
+            this.relayReconnectAttempts = 0;
+          }
+        }, 10_000);
+        if (!this.hasLoggedRelayOnline) {
+          this.hasLoggedRelayOnline = true;
+          this.log(`[RELAY] Universal Tunnel Relay online (NAT/Firewall bypass ready)`);
+        }
         ws.send(JSON.stringify({
           type: 'register',
           peerId: this.peerId,
@@ -556,7 +598,7 @@ export class P2PMesh {
             this.requestPyramidJoinViaRelay(false);
           } else {
             setTimeout(() => {
-              if (!this.hasJoinedPyramid && !this.djControlConn?.open) {
+              if (!this.isDestroyed && !this.hasJoinedPyramid && !this.djControlConn?.open) {
                 this.activateRelayControlFallback();
               }
             }, 1800);
@@ -565,6 +607,7 @@ export class P2PMesh {
       };
 
       ws.onmessage = (evt) => {
+        if (this.isDestroyed || this.relayWs !== ws) return;
         if (evt.data instanceof ArrayBuffer) {
           this.handleRelayBinaryFrame(evt.data);
         } else if (typeof evt.data === 'string') {
@@ -576,13 +619,22 @@ export class P2PMesh {
       };
 
       ws.onclose = () => {
+        if (this.relayWs !== ws) return;
+        this.relayWs = null;
         this.relayConnected = false;
+        clearTimeout(this.relayStabilityTimer);
         clearInterval(this.relayPingInterval);
+        if (this.isDestroyed) return;
         this.relayFailures++;
+        if (this.relayFailures >= 3) {
+          this.hasLoggedRelayOnline = false;
+        }
         if (this.relayEverConnected || this.relayFailures < 2) {
+          const delayMs = Math.min(20_000, Math.round(2500 * Math.pow(1.5, Math.min(this.relayReconnectAttempts, 6))));
+          this.relayReconnectAttempts++;
           this.relayReconnectTimer = setTimeout(() => {
-            if (this.stationId) this.initRelaySocket();
-          }, 2500);
+            if (!this.isDestroyed && this.stationId) this.initRelaySocket();
+          }, delayMs);
         }
       };
 
@@ -686,6 +738,10 @@ export class P2PMesh {
     }
 
     if (msg.type === 'relay_dj_disconnected' && !this.isDJ) {
+      // If direct WebRTC links are open, do not wipe verified DJ/parent state on a transient relay blip
+      if (this.djControlConn?.open || this.parentDataConn?.open) {
+        return;
+      }
       this.log(`🚨 DJ disconnected from station "${msg.stationId}".`);
       this.hasJoinedPyramid = false;
       this.currentParentId = null;
@@ -971,19 +1027,32 @@ export class P2PMesh {
   // --- 5. Pure Binary Tree Capacity Placement ---
 
   private async isAuthorizedStreamChild(remoteId: string): Promise<boolean> {
-    if (!this.isDJ) {
-      await this.listenerVerifyQueue;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (!this.isDJ) {
+        await this.listenerVerifyQueue;
+      }
+      const node = this.masterTreeMap.get(remoteId);
+      if (node && node.parent === this.peerId) {
+        return this.childDataConns.has(remoteId) || this.childDataConns.size < this.maxChildren;
+      }
+      if (this.isDJ || attempt === 5) return false;
+      // Give master_tree_update a brief window to arrive after a child's dj_assignment
+      await new Promise((r) => setTimeout(r, 100));
     }
-    const node = this.masterTreeMap.get(remoteId);
-    if (!node || node.parent !== this.peerId) return false;
-    return this.childDataConns.has(remoteId) || this.childDataConns.size < this.maxChildren;
+    return false;
   }
 
   private async isKnownStationPeer(remoteId: string): Promise<boolean> {
-    if (!this.isDJ) {
-      await this.listenerVerifyQueue;
+    if (remoteId === this.peerId) return false;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (!this.isDJ) {
+        await this.listenerVerifyQueue;
+      }
+      if (this.masterTreeMap.has(remoteId)) return true;
+      if (this.isDJ || attempt === 5) return false;
+      await new Promise((r) => setTimeout(r, 100));
     }
-    return remoteId !== this.peerId && this.masterTreeMap.has(remoteId);
+    return false;
   }
 
   private handleIncomingConnection(conn: DataConnection) {
@@ -1218,18 +1287,19 @@ export class P2PMesh {
 
   // Pure binary tree placement: pick shallowest node with capacity (< maxChildren)
   private assignNewcomerToPyramid(newcomerId: string, transport: 'webrtc' | 'relay' = 'webrtc') {
+    const dispatchState = this.stationState ? this.buildCompactStateForDispatch(this.stationState) : null;
     // If newcomer is already placed in the pyramid, just re-send their assignment and state!
     const existingNode = this.masterTreeMap.get(newcomerId);
     if (existingNode && existingNode.parent && this.masterTreeMap.has(existingNode.parent)) {
       existingNode.lastHeartbeat = Date.now();
       existingNode.transport = transport;
+      this.broadcastTreeTopology();
       this.sendControlToListener(newcomerId, {
         type: 'dj_assignment',
         parentId: existingNode.parent,
         depth: existingNode.depth,
-        state: this.stationState
+        state: dispatchState
       });
-      this.broadcastTreeTopology();
       return;
     }
 
@@ -1270,16 +1340,62 @@ export class P2PMesh {
 
     this.log(`[DJ Orchestrator] Placed ${newcomerId} under parent ${parentId} (Depth ${newcomerDepth}, ${transport.toUpperCase()})`);
 
-    // 1. Direct command to newcomer: "Connect to assigned parent"
+    // 1. Broadcast updated master tree map first so assigned parents accept newcomer stream links immediately
+    this.broadcastTreeTopology();
+
+    // 2. Direct command to newcomer: "Connect to assigned parent"
     this.sendControlToListener(newcomerId, {
       type: 'dj_assignment',
       parentId,
       depth: newcomerDepth,
-      state: this.stationState
+      state: dispatchState
     });
+  }
 
-    // 2. Broadcast updated master tree map to all listeners so visualizer & peer state stay synced
-    this.broadcastTreeTopology();
+  private buildCompactStateForDispatch(state: StationState): StationState {
+    try {
+      const rawLen = JSON.stringify(state).length;
+      if (rawLen <= 700_000) return state;
+
+      // Prioritize keeping complete manifests (cover art + chunkHashes) on active and upcoming tracks
+      const priorityIds = new Set<string>();
+      if (state.currentTrackId) priorityIds.add(state.currentTrackId);
+      if (state.nextTrackId) priorityIds.add(state.nextTrackId);
+      if (Array.isArray(state.playlistOrder) && state.playlistOrder.length > 0) {
+        const curIdx = state.currentTrackId ? state.playlistOrder.indexOf(state.currentTrackId) : 0;
+        for (let offset = 0; offset < Math.min(4, state.playlistOrder.length); offset++) {
+          const idx = (Math.max(0, curIdx) + offset) % state.playlistOrder.length;
+          priorityIds.add(state.playlistOrder[idx]);
+        }
+      }
+
+      const trimmedManifests: Record<string, TrackManifest> = {};
+      for (const [id, m] of Object.entries(state.trackManifests)) {
+        if (priorityIds.has(id)) {
+          trimmedManifests[id] = m;
+        } else {
+          const { coverDataUrl: _dropCover, ...withoutCover } = m;
+          trimmedManifests[id] = withoutCover;
+        }
+      }
+
+      let candidate: StationState = { ...state, trackManifests: trimmedManifests };
+      if (JSON.stringify(candidate).length <= 850_000) return candidate;
+
+      const tightManifests: Record<string, TrackManifest> = {};
+      for (const [id, m] of Object.entries(trimmedManifests)) {
+        if (priorityIds.has(id)) {
+          tightManifests[id] = m;
+        } else {
+          const { chunkHashes: _dropHashes, ...minimal } = m;
+          tightManifests[id] = minimal;
+        }
+      }
+      candidate = { ...state, trackManifests: tightManifests };
+      return candidate;
+    } catch {
+      return state;
+    }
   }
 
   private canSendControlViaWebRTC(payload: any): boolean {
@@ -1300,7 +1416,12 @@ export class P2PMesh {
           return;
         } catch {}
       }
-      this.sendViaRelay(listenerId, signedPayload);
+      if (this.sendViaRelay(listenerId, signedPayload)) {
+        return;
+      }
+      if (conn && conn.open) {
+        try { conn.send(signedPayload); } catch {}
+      }
     }, payload);
   }
 
@@ -2272,14 +2393,14 @@ export class P2PMesh {
 
   private broadcastControl(msg: Record<string, unknown>) {
     this.enqueueSignedDjDispatch((signedMsg) => {
-      if (this.canSendControlViaWebRTC(signedMsg)) {
+      const relayOk = this.sendViaRelay('*', signedMsg);
+      if (!relayOk || this.canSendControlViaWebRTC(signedMsg)) {
         for (const conn of this.allListenerConns.values()) {
           if (conn.open) {
             try { conn.send(signedMsg); } catch {}
           }
         }
       }
-      this.sendViaRelay('*', signedMsg);
     }, msg);
   }
 
@@ -2288,7 +2409,7 @@ export class P2PMesh {
     this.stationState = { ...this.stationState, ...partialState };
     this.broadcastControl({
       type: 'station_state',
-      state: this.stationState
+      state: this.buildCompactStateForDispatch(this.stationState)
     });
   }
 
@@ -2316,12 +2437,17 @@ export class P2PMesh {
   }
 
   public destroy() {
+    this.isDestroyed = true;
     this.signOff();
     clearInterval(this.heartbeatInterval);
     clearInterval(this.relayPingInterval);
     clearInterval(this.joinRetryTimer);
     clearTimeout(this.relayReconnectTimer);
-    try { this.relayWs?.close(); } catch {}
+    clearTimeout(this.relayStabilityTimer);
+    this.detachRelaySocket(this.relayWs);
+    this.relayWs = null;
+    this.relayConnected = false;
+    this.stationId = '';
     this.djControlConn?.close();
     this.parentDataConn?.close();
     for (const conn of this.allListenerConns.values()) conn.close();
