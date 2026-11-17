@@ -1,28 +1,13 @@
-// time-sync.ts: CORS-safe clock synchronization using same-origin headers
+// time-sync.ts: Millisecond wallclock reference helpers
+// Note: Host and listener wallclocks are assumed synchronized to millisecond precision.
+// Avoid HTTP Date header offsets because HTTP Date truncates to 1-second integer resolution,
+// which introduces up to 1000ms artificial skew between tabs on the same machine.
 
 let clockOffsetMs = 0;
 let isSynced = false;
 
 export async function syncNetworkTime(): Promise<number> {
-  try {
-    const t0 = performance.now();
-    // Same-origin request has zero CORS issues in LibreWolf, Firefox, Chrome, Safari
-    const res = await fetch(window.location.href, { method: 'HEAD', cache: 'no-store' });
-    const t1 = performance.now();
-    const dateHeader = res.headers.get('date');
-
-    if (dateHeader) {
-      const serverTime = new Date(dateHeader).getTime() + ((t1 - t0) / 2);
-      const localTime = Date.now();
-      clockOffsetMs = serverTime - localTime;
-      isSynced = true;
-      console.log(`[TimeSync] Clock synced. Offset: ${clockOffsetMs}ms (RTT: ${Math.round(t1 - t0)}ms)`);
-      return clockOffsetMs;
-    }
-  } catch {
-    // Local dev server fallback
-  }
-
+  clockOffsetMs = 0;
   isSynced = true;
   return 0;
 }

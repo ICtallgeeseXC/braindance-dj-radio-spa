@@ -780,6 +780,16 @@
       handleStationState(state);
     };
 
+    mesh.onGetPlaybackSyncState = () => {
+      return mode === 'dj' && player ? player.getPlaybackSyncReport() : null;
+    };
+
+    mesh.onPlaybackSync = (report) => {
+      if (mode === 'listener' && player) {
+        player.applyPlaybackSync(report);
+      }
+    };
+
     mesh.onChunkReceived = (trackId, chunkIndex, totalChunks, data) => {
       // Feed local player buffer (which streams directly to OPFS disk with zero RAM bloat)
       return player ? player.handleIncomingChunk(trackId, chunkIndex, totalChunks, data) : false;

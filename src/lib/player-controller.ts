@@ -2,7 +2,7 @@
 
 import { TrackBuffer, type TrackManifest } from './chunk-pipeline';
 import { getSyncedTime } from './time-sync';
-import type { StationState } from './p2p-mesh';
+import type { StationState, PlaybackSyncReport } from './p2p-mesh';
 import { getTrackFromCache, saveTrackToCache } from './audio-cache';
 import { getTrackFromDisk } from './audio-storage';
 
@@ -58,6 +58,9 @@ export class PlayerController {
   constructor() {
     this.audioElement = document.createElement('audio');
     this.audioElement.preload = 'auto';
+    this.audioElement.preservesPitch = true;
+    (this.audioElement as any).mozPreservesPitch = true;
+    (this.audioElement as any).webkitPreservesPitch = true;
     this.audioElement.setAttribute('playsinline', 'true');
     this.audioElement.setAttribute('webkit-playsinline', 'true');
     this.audioElement.style.position = 'fixed';
@@ -351,6 +354,7 @@ export class PlayerController {
     this.registerManifest(manifest);
     this.currentTrackId = manifest.trackId;
     this.errorRetryCount = 0;
+    this.audioElement.playbackRate = 1.0;
     if (this.currentTrackBuffer) {
       this.currentTrackBuffer.destroy();
       this.currentTrackBuffer = null;
@@ -656,6 +660,78 @@ export class PlayerController {
     this.audioElement.load();
   }
 
+  public getPlaybackSyncReport(): PlaybackSyncReport | null {
+    if (!this.currentTrackId || !this.isPlaying || this.audioElement.paused || this.audioElement.readyState < 1) {
+      return null;
+    }
+    const manifest = this.trackManifests.get(this.currentTrackId);
+    const dur =
+      this.audioElement.duration && Number.isFinite(this.audioElement.duration) && this.audioElement.duration > 0
+        ? this.audioElement.duration
+        : manifest?.duration || 0;
+    return {
+      trackId: this.currentTrackId,
+      djPosition: this.audioElement.currentTime,
+      djDuration: dur,
+      sentAt: Date.now(),
+      isPlaying: true
+    };
+  }
+
+  public applyPlaybackSync(report: PlaybackSyncReport) {
+    if (!this.audioElement.src || !this.isPlaying || !report.isPlaying) return;
+    if (!this.currentTrackId || report.trackId !== this.currentTrackId) return;
+    if (this.audioElement.readyState < 1) return;
+
+    const recvAt = Date.now();
+    const latencySec = Math.max(0, Math.min(5.0, (recvAt - report.sentAt) / 1000));
+    const expectedDjPos = report.djPosition + latencySec;
+
+    // Align local wallclock baseline directly to DJ's actual audio position + packet transit delay
+    this.stationStartedAt = recvAt - expectedDjPos * 1000;
+
+    const manifest = this.trackManifests.get(this.currentTrackId);
+    const trackDur =
+      report.djDuration > 0
+        ? report.djDuration
+        : manifest?.duration ||
+          (this.audioElement.duration && Number.isFinite(this.audioElement.duration) && this.audioElement.duration > 0
+            ? this.audioElement.duration
+            : 0);
+
+    const listenerPos = this.audioElement.currentTime;
+    const errorSec = expectedDjPos - listenerPos;
+    const nextRate = this.computeConvergingRate(errorSec, trackDur, listenerPos, expectedDjPos);
+    if (nextRate !== null && Math.abs(this.audioElement.playbackRate - nextRate) > 0.0002) {
+      console.log(
+        `[SyncEngine] 25s DJ sync (latency=${Math.round(latencySec * 1000)}ms, drift=${errorSec >= 0 ? '+' : ''}${errorSec.toFixed(3)}s) -> rate ${nextRate.toFixed(4)}x`
+      );
+      this.audioElement.playbackRate = nextRate;
+    }
+  }
+
+  private computeConvergingRate(errorSec: number, trackDur: number, listenerPos: number, targetPos: number): number | null {
+    const absErr = Math.abs(errorSec);
+    if (absErr < 0.03) {
+      return 1.0;
+    }
+    if (absErr > 4.0) {
+      if (!this.audioElement.seeking && (trackDur <= 0 || targetPos < trackDur)) {
+        console.log(`[SyncEngine] Large drift (${absErr.toFixed(2)}s), hard seeking to ${targetPos.toFixed(2)}s`);
+        try {
+          this.audioElement.currentTime = targetPos;
+        } catch (e) {
+          console.warn('[SyncEngine] Large drift seek notice:', e);
+        }
+      }
+      return 1.0;
+    }
+    // Adjust speed proportionally so error vanishes cleanly by the end of the track
+    const remainingSec = trackDur > listenerPos + 5 ? trackDur - listenerPos : 25;
+    const rawRate = 1 + errorSec / remainingSec;
+    return Number(Math.max(0.95, Math.min(1.05, rawRate)).toFixed(4));
+  }
+
   public syncPlaybackPosition(isInitialSeek = false) {
     if (!this.audioElement.src) return;
 
@@ -694,8 +770,8 @@ export class PlayerController {
       const drift = Math.abs(diff);
 
       if (isInitialSeek) {
-        // Initial stream jump on track load if more than 1s into song
-        if (targetOffset > 1.0 && canSeekToTarget() && !this.audioElement.seeking) {
+        // Initial stream jump on track load if more than 0.25s off target
+        if (targetOffset > 0.25 && canSeekToTarget() && !this.audioElement.seeking) {
           console.log(`[SyncEngine] Initial stream alignment to ${targetOffset.toFixed(2)}s`);
           try {
             this.audioElement.currentTime = targetOffset;
@@ -704,30 +780,23 @@ export class PlayerController {
           }
         }
       } else {
-        // Ongoing playback drift compensation:
-        // For small drift (0.15s - 3.0s), use smooth micro-speed adjustments (+/- 3%)!
-        // Never hard-seek during playback! This eliminates audio stutter and mobile decoder stalls.
-        if (drift >= 0.15 && drift <= 3.0) {
-          if (diff > 0) {
-            // Audio is behind by 0.15s - 3.0s: speed up slightly (+3%) to catch up
-            this.audioElement.playbackRate = 1.03;
-          } else {
-            // Audio is ahead by 0.15s - 3.0s: slow down slightly (-3%) to let station catch up
-            this.audioElement.playbackRate = 0.97;
-          }
-        } else if (drift < 0.15) {
-          // Perfectly synced! Keep normal 1.0x rate
+        if (drift < 0.03) {
           if (this.audioElement.playbackRate !== 1.0) {
             this.audioElement.playbackRate = 1.0;
           }
-        } else if (drift > 3.0 && canSeekToTarget() && !this.audioElement.seeking) {
-          // Massive drift (>3.0s): jump
+        } else if (drift > 4.0 && canSeekToTarget() && !this.audioElement.seeking) {
           console.log(`[SyncEngine] Large drift (${drift.toFixed(2)}s), hard seeking to ${targetOffset.toFixed(2)}s`);
           this.audioElement.playbackRate = 1.0;
           try {
             this.audioElement.currentTime = targetOffset;
           } catch (e) {
             console.warn('[SyncEngine] Large drift seek notice:', e);
+          }
+        } else if (Number.isFinite(trackDur)) {
+          // If converged or steering under beacon, adjust/clamp smoothly without coarse +/-3% snaps
+          const targetRate = this.computeConvergingRate(diff, trackDur, this.audioElement.currentTime, targetOffset);
+          if (targetRate !== null && Math.abs(this.audioElement.playbackRate - targetRate) > 0.0005) {
+            this.audioElement.playbackRate = targetRate;
           }
         }
       }

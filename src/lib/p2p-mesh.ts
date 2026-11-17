@@ -59,8 +59,17 @@ function extractSignablePayload(msg: Record<string, unknown>): Record<string, un
     ...(msg.state !== undefined ? { state: msg.state } : {}),
     ...(msg.tree !== undefined ? { tree: msg.tree } : {}),
     ...(msg.authorized !== undefined ? { authorized: msg.authorized } : {}),
-    ...(msg.trackId !== undefined ? { trackId: msg.trackId } : {})
+    ...(msg.trackId !== undefined ? { trackId: msg.trackId } : {}),
+    ...(msg.sync !== undefined ? { sync: msg.sync } : {})
   };
+}
+
+export interface PlaybackSyncReport {
+  trackId: string;
+  djPosition: number;
+  djDuration: number;
+  sentAt: number;
+  isPlaying: boolean;
 }
 
 export interface PeerNodeInfo {
@@ -144,6 +153,8 @@ export class P2PMesh {
   private masterTreeMap: Map<string, PeerNodeInfo> = new Map();
   private stationState: StationState | null = null;
   private heartbeatInterval: any = null;
+  private playbackSyncInterval: any = null;
+  private lastAppliedSyncSentAt: number = 0;
   private missedParentPings: number = 0;
   private currentBufferPct: number = 0;
 
@@ -167,6 +178,8 @@ export class P2PMesh {
   public onInjectTrackComplete?: (trackId: string) => void;
   public onInjectTrackExpired?: (trackId: string) => void;
   public onPeerDeparted?: (peerId: string) => void;
+  public onGetPlaybackSyncState?: () => PlaybackSyncReport | null;
+  public onPlaybackSync?: (report: PlaybackSyncReport) => void;
 
   private isPublicBroadcast = true;
   private injectSecret = '';
@@ -282,6 +295,8 @@ export class P2PMesh {
       : (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
           : Math.random().toString(36).slice(2) + Date.now().toString(36) + Math.random().toString(36).slice(2));
+    clearInterval(this.playbackSyncInterval);
+    this.lastAppliedSyncSentAt = 0;
 
     this.initDjSigningKeys();
 
@@ -452,6 +467,8 @@ export class P2PMesh {
     this.pinnedDjJwkCanonical = '';
     this.assignedParentId = null;
     this.listenerVerifyQueue = Promise.resolve();
+    clearInterval(this.playbackSyncInterval);
+    this.lastAppliedSyncSentAt = 0;
 
     const listenerId = 'peer_' + Math.random().toString(36).substring(2, 9);
     this.peerId = listenerId;
@@ -807,6 +824,10 @@ export class P2PMesh {
       ) {
         if (fromId !== djPeerId) return;
         this.handleDJControlMessage(data);
+      } else if (data.type === 'playback_sync') {
+        const expectedParent = this.currentParentId || this.assignedParentId || djPeerId;
+        if (fromId !== djPeerId && fromId !== expectedParent) return;
+        this.handleDJControlMessage(data);
       } else if (data.type === 'relay_stream_ready') {
         const expectedParent = this.assignedParentId || this.currentParentId || this.masterTreeMap.get(this.peerId)?.parent;
         if (fromId !== expectedParent) return;
@@ -888,6 +909,7 @@ export class P2PMesh {
       if (this.isDJ) {
         this.notifyTreeChange();
         this.startDJPruner();
+        this.startPlaybackSyncLoop();
       } else {
         // As a listener, establish control channel with DJ orchestrator
         this.connectToDJOrchestrator();
@@ -1540,7 +1562,8 @@ export class P2PMesh {
         sigBytes as BufferSource,
         encodedPayload
       );
-    } catch {
+    } catch (err) {
+      console.warn('[P2P Mesh] DJ envelope verification error:', err);
       return false;
     }
   }
@@ -1622,6 +1645,37 @@ export class P2PMesh {
         this.stationState = cleanState;
         if (this.onStationStateUpdate) this.onStationStateUpdate(cleanState);
       }
+    } else if (data.type === 'playback_sync') {
+      const rawSync = data.sync as Partial<PlaybackSyncReport> | undefined;
+      if (
+        !rawSync ||
+        typeof rawSync !== 'object' ||
+        typeof rawSync.trackId !== 'string' ||
+        !TRACK_ID_RE.test(rawSync.trackId) ||
+        typeof rawSync.djPosition !== 'number' ||
+        !Number.isFinite(rawSync.djPosition) ||
+        rawSync.djPosition < 0 ||
+        typeof rawSync.djDuration !== 'number' ||
+        !Number.isFinite(rawSync.djDuration) ||
+        rawSync.djDuration < 0 ||
+        typeof rawSync.sentAt !== 'number' ||
+        !Number.isFinite(rawSync.sentAt) ||
+        rawSync.sentAt <= 0 ||
+        typeof rawSync.isPlaying !== 'boolean'
+      ) {
+        return;
+      }
+      if (rawSync.sentAt <= this.lastAppliedSyncSentAt) return;
+      this.lastAppliedSyncSentAt = rawSync.sentAt;
+      const report: PlaybackSyncReport = {
+        trackId: rawSync.trackId,
+        djPosition: rawSync.djPosition,
+        djDuration: rawSync.djDuration,
+        sentAt: rawSync.sentAt,
+        isPlaying: rawSync.isPlaying
+      };
+      this.onPlaybackSync?.(report);
+      this.forwardPlaybackSyncToChildren(data);
     }
   }
 
@@ -1984,6 +2038,57 @@ export class P2PMesh {
     }, 3500);
   }
 
+  // DJ periodic corrective sync beacon (every 25s down to direct connected children)
+  private startPlaybackSyncLoop() {
+    clearInterval(this.playbackSyncInterval);
+    this.playbackSyncInterval = setInterval(() => {
+      if (!this.isDJ || this.isDestroyed) return;
+      const report = this.onGetPlaybackSyncState?.();
+      if (!report || !report.isPlaying || !report.trackId) return;
+      this.enqueueSignedDjDispatch((signedMsg) => {
+        this.forwardPlaybackSyncToChildren(signedMsg);
+      }, {
+        type: 'playback_sync',
+        sync: report
+      });
+    }, 25_000);
+  }
+
+  private forwardPlaybackSyncToChildren(signedMsg: Record<string, unknown>) {
+    if (this.isDestroyed) return;
+    const delivered = new Set<string>();
+
+    for (const [peerId, conn] of this.childDataConns) {
+      if (conn.open) {
+        try {
+          conn.send(signedMsg);
+          delivered.add(peerId);
+        } catch {}
+      }
+    }
+    for (const relayChildId of this.relayChildrenIds) {
+      if (delivered.has(relayChildId)) continue;
+      if (this.sendViaRelay(relayChildId, signedMsg)) {
+        delivered.add(relayChildId);
+      }
+    }
+    if (this.isDJ) {
+      for (const node of this.masterTreeMap.values()) {
+        if (node.parent === this.peerId && !delivered.has(node.peerId)) {
+          const ctrlConn = this.allListenerConns.get(node.peerId);
+          if (ctrlConn?.open) {
+            try {
+              ctrlConn.send(signedMsg);
+              delivered.add(node.peerId);
+              continue;
+            } catch {}
+          }
+          this.sendViaRelay(node.peerId, signedMsg);
+        }
+      }
+    }
+  }
+
   // --- 9. Stream Data & Binary Audio Chunks ---
 
   private dropWebRtcChildStream(peerId: string) {
@@ -2059,6 +2164,12 @@ export class P2PMesh {
       } else if (data.type === 'link_pong') {
         // Parent replied! Reset missed pings
         this.missedParentPings = 0;
+      } else if (data.type === 'playback_sync') {
+        if (this.isDJ) return;
+        const djPeerId = `station-${this.stationId}-dj`;
+        const expectedParent = this.currentParentId || this.assignedParentId || djPeerId;
+        if (fromPeerId !== djPeerId && fromPeerId !== expectedParent) return;
+        this.handleDJControlMessage(data);
       } else if (data.type === 'child_departing') {
         if (typeof data.childPeerId === 'string' && data.childPeerId !== fromPeerId) return;
         if (!this.childrenIds.has(fromPeerId) && !this.childDataConns.has(fromPeerId) && !this.relayChildrenIds.has(fromPeerId)) {
@@ -2440,6 +2551,7 @@ export class P2PMesh {
     this.isDestroyed = true;
     this.signOff();
     clearInterval(this.heartbeatInterval);
+    clearInterval(this.playbackSyncInterval);
     clearInterval(this.relayPingInterval);
     clearInterval(this.joinRetryTimer);
     clearTimeout(this.relayReconnectTimer);
